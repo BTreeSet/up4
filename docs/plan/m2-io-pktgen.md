@@ -21,7 +21,9 @@ harness drops; record the number (S15 M2).
 - [ ] Socket builder (S6.1): socket2; `SO_REUSEPORT` when threads > 1;
       request 8 MiB RCVBUF/SNDBUF, read back and log **granted** values;
       one `UdpSocketState` per socket; log `gro/gso/max_gso_segments` once.
-- [ ] Rx loop (S6.2): arena `64 × 64 KiB` allocated once; batched recv; GRO
+- [ ] Rx loop (S6.2): arena of 64 slots allocated once, each sized
+      `max_udp_payload_size() * gro_segments()` from quinn-udp (~92 KiB on
+      Linux) — not a hardcoded 64 KiB; batched recv; GRO
       stride iteration; demux via the config-built `HashMap`; decode; seq
       accounting (per-vport `expected_seq`, gap accumulate, reorder window
       1024, record-only); engine invoke; oversize check.
@@ -49,8 +51,8 @@ harness drops; record the number (S15 M2).
 
 ## Decisions
 
-- Staging without `smallvec`: see M1 decisions. Batch-bounded capacity means
-  a plain preallocated `Vec` never grows after startup.
+- Staging is a plain preallocated `Vec` (S6.3): batch-bounded capacity means
+  it never grows after startup.
 - The engine instance lives on the shard thread stack; tables arrive in M4.
 
 ## Verify

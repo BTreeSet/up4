@@ -38,7 +38,7 @@ default kernel settings.
 6. **Fail loudly.** Every discard, refusal, or fallback increments a named
    counter and, for one-time events, logs at WARN.
 7. **MSRV:** latest stable Rust at implementation time; pin in
-   `rust-toolchain.toml`. `unsafe` allowed only in `overlay-io` syscall
+   `rust-toolchain.toml`. `unsafe` allowed only in `up4-io` syscall
    plumbing and (if activated) BPF FFI, each block commented with its
    invariant.
 
@@ -66,9 +66,10 @@ up4/
   benches/                  # criterion benches: io_only, engine_only, e2e
 ```
 
-Dependencies (workspace): `quinn-udp`, `socket2`, `libc`, `serde`, `toml`,
-`clap`, `tracing`, `tracing-subscriber`, `core_affinity`, `criterion` (dev),
-`etherparse` (dev/test only). x4c-generated code is vendored into
+Dependencies (workspace): `quinn-udp`, `socket2`, `libc`, `serde`, `serde_json`
+(S8/S9/S11.1 all mandate JSON output), `toml`, `clap`, `tracing`,
+`tracing-subscriber`, `core_affinity`, `criterion` (dev), `etherparse`
+(dev/test only). x4c-generated code is vendored into
 `up4-engine/src/gen/<program>.rs` by a build step invoking `x4c` (pin the x4c
 git revision in a build script constant). Do not add dependencies beyond this
 list without an explicit TODO comment explaining why.
@@ -156,8 +157,11 @@ capabilities once at startup (`gro: on/off, gso: on/off, max_gso_segments`).
 Per shard thread, loop:
 
 1. `recvmmsg`-style batched receive through quinn-udp into a preallocated
-   arena: `RX_BATCH = 64` iovecs, each `64 KiB` (GRO can coalesce up to ~64 KiB
-   per message). Arena is allocated once at startup.
+   arena: `RX_BATCH = 64` iovecs. Size each slot from quinn-udp itself —
+   `max_udp_payload_size() * gro_segments()` — do not hardcode 64 KiB:
+   `gro_segments()` is `UDP_GRO_CNT_MAX = 64` on Linux, so at up4's 1472 B
+   segment a fully coalesced read is ~92 KiB and a 64 KiB slot truncates it.
+   Arena is allocated once at startup.
 2. For each received message: quinn-udp reports `stride` (GRO segment size).
    Iterate segments; each segment = overlay header + inner frame.
 3. Demux ingress vport: lookup `(src_ip, src_port)` in a `HashMap` built from
@@ -176,8 +180,9 @@ enforces the cap).
 
 ### S6.3 Transmit path and verdict dispatch
 
-Per shard, per-destination-vport staging queues (`SmallVec` of segment
-descriptors into a tx arena). Verdicts:
+Per shard, per-destination-vport staging queues (preallocated `Vec` of segment
+descriptors into a tx arena, cleared per batch; batch-bounded capacity means it
+never grows after startup). Verdicts:
 
 - `Forward(vport)` → append to that vport's staging queue.
 - `Broadcast` → append to every vport except ingress. Count `tx_broadcast`.
@@ -257,7 +262,13 @@ The ctl server (S8) manipulates tables through a typed shim generated
 alongside the adapter. x4c-generated table methods take binary-serialized
 keys/params with these conventions that the shim must fully encapsulate:
 exact and range keys little-endian, LPM keys in wire (big-endian) byte
-order, action parameters little-endian. The shim exposes:
+order, action parameters little-endian. **Upstream x4c documentation
+contradicts itself here**: its Endianness section gives the key rules above,
+while its control-plane walkthrough says "Numeric types are serialized in
+big-endian byte order" for both key and action-parameter data. The pinned
+x4c revision's generated code is the authority; the S13.1 fixed-byte-vector
+tests pin whatever it actually does. Do not "fix" the shim to match a doc.
+The shim exposes:
 
 ```rust
 fn table_add(&self, table: &str, key: TypedKey, action: &str, params: &[TypedVal]) -> Result<()>;
@@ -280,7 +291,9 @@ config (config-selected static map otherwise). Feature-gated
 ### S7.5 Fallback slot
 
 Define `mod fallback_ubpf;` containing only the `Engine` impl skeleton and a
-doc comment describing the p4c-ubpf + rbpf route. Do not implement in v1.
+doc comment describing the p4c-ubpf + rbpf route. Note in that comment that
+p4c-ubpf emits **C** for the uBPF VM, not BPF bytecode, so the route needs a
+clang → BPF-bytecode step before rbpf can load it. Do not implement in v1.
 
 ## S8. Control channel (`up4-ctl`)
 

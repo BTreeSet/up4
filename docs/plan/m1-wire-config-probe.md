@@ -56,12 +56,10 @@ shape). Done-when: unit tests green, probe runs on a stock Linux box (S15 M1).
 
 ## Decisions
 
-- **serde_json joins the dependency list.** S8 (length-prefixed JSON), S9
-  (JSONL snapshots), and S11.1 (probe JSON) all mandate JSON; S2 omits it.
-  Add with the spec-sanctioned escape hatch: `// TODO(spec): serde_json
-  required by S8/S9/S11.1 JSON output; S2 dependency list predates it.`
-- No `smallvec` (S6.3 mentions it, S2 doesn't list it): preallocated
-  per-vport `Vec<SegDesc>` cleared per batch covers the same ground (M2).
+- **serde_json** is in the S2 dependency list, required by S8
+  (length-prefixed JSON), S9 (JSONL snapshots), and S11.1 (probe JSON).
+- No `smallvec`: preallocated per-vport `Vec<SegDesc>` cleared per batch
+  covers S6.3's staging queues (M2).
 
 ## Verify
 

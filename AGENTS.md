@@ -17,7 +17,7 @@ invent protocol or semantics.
 | Sockets, rx/tx, pktgen | spec S6, S7.4, S11.2 + [docs/plan/m2](docs/plan/m2-io-pktgen.md) |
 | Ctl channel, counters | spec S8–S9, S12 + [docs/plan/m3](docs/plan/m3-ctl-metrics.md) |
 | x4c, adapter, tables, l2fwd | spec S7, S10 + [docs/plan/m4](docs/plan/m4-engine-l2fwd.md) |
-| l3fwd, punt | spec S7.2, S8.3 + [docs/plan/m5](docs/plan/m5-l3fwd-punt.md) |
+| l3fwd, punt | spec S7.2, S8.3, S14 + [docs/plan/m5](docs/plan/m5-l3fwd-punt.md) |
 | Cluster runs, benches | spec S13–S14 + [docs/plan/m6](docs/plan/m6-cluster-benches.md) |
 
 Milestones are sequential and each ends runnable. Do not start M(n+1) while
@@ -84,10 +84,10 @@ allocation; the e2e counting-allocator guard enforces it.
 
 ## Dependency policy
 
-Closed list (spec S2): quinn-udp, socket2, libc, serde, toml, clap, tracing,
-tracing-subscriber, core_affinity, criterion (dev), etherparse (dev/test only).
-Additions need an in-code TODO citing the spec section that forces them —
-`serde_json` is the sanctioned example (S8/S9/S11.1 mandate JSON).
+Closed list (spec S2): quinn-udp, socket2, libc, serde, serde_json, toml, clap,
+tracing, tracing-subscriber, core_affinity, criterion (dev), etherparse
+(dev/test only). Anything else needs an in-code TODO citing the spec section
+that forces it.
 
 ## Explicitly out of scope for v1 (spec S16 — refuse, don't build)
 

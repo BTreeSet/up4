@@ -91,10 +91,11 @@ number for loss accounting, and a coarse timestamp. Topology is out of band:
 receivers map source address to ingress port from the static config.
 
 ```toml
-# topology.toml
+# up4.toml
 [node]
-id   = "a"
-bind = "10.0.0.11:7400"
+id       = "a"
+bind     = "10.0.0.11:7400"
+pipeline = "l3fwd"           # compiled-in engine name
 
 [[vport]]
 id   = 0
@@ -118,7 +119,7 @@ x4c switch.p4 -o pipeline.rs
 cargo build --release
 
 # on each node, no sudo anywhere
-./up4 --config topology.toml --pipeline switch
+./up4d --config up4.toml
 
 # add a table entry through the local side channel
 ./up4ctl table add ingress.fwd.fib --key 02:00:00:00:00:01 --action forward --port 1
@@ -149,8 +150,9 @@ cargo build --release
 - [ ] Engine integration behind the `Engine` trait
 - [ ] BMv2 differential conformance CI
 - [ ] Broadcast replication and punt port
-- [ ] Optional per-port token bucket shaper (only if experiments need
-      congestion signals to mean something)
+- [ ] *Post-v1 (out of scope for v1, spec S16):* optional per-port token
+      bucket shaper, only if experiments need congestion signals to mean
+      something
 
 ## Name
 

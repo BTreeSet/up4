@@ -28,7 +28,7 @@ output attached (S15 M6).
       peer keeps counting rx silence, no crash, no spin.
 - [ ] A7: `cargo test` green, `clippy -D warnings` clean, `unsafe` only in
       up4-io syscall plumbing — grep-audit as the final gate:
-      `rg -n 'unsafe' crates/ --glob '!up4-io/**'` must be empty.
+      `rg -n 'unsafe' crates/ --glob '!crates/up4-io/**'` must be empty.
 - [ ] S17: attach probe output for both nodes; every contradicted assumption
       logged as WARN with its fallback, or a documented deviation.
 
@@ -36,6 +36,6 @@ output attached (S15 M6).
 
 ```sh
 cargo bench --workspace          # update benches/RESULTS.md
-rg -n 'unsafe' crates/ --glob '!up4-io/**'   # empty
+rg -n 'unsafe' crates/ --glob '!crates/up4-io/**'   # empty
 # then the cluster runbook above, results appended to RESULTS.md
 ```
