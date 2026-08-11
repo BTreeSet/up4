@@ -28,6 +28,9 @@ mod tests {
         let mut p = l2fwd::main_pipeline::new(2);
         // Keys are wire order, action parameters little-endian (the ABI
         // up4-engine's `x4c` module pins with fixed vectors).
+        // Least-significant byte first — see the ABI test below. This address
+        // is a palindrome, so it reads the same either way; the ABI test uses
+        // one that does not.
         p.add_table_entry(
             "ingress.mac_dst",
             "forward",
@@ -47,6 +50,40 @@ mod tests {
 
         assert_eq!(out.len(), 1, "one copy out");
         assert_eq!(out[0].1, 1, "forwarded to the port the table names");
+    }
+
+    /// The key ABI, pinned by a value that can tell the two orders apart.
+    ///
+    /// `p4rs::extract_exact_key` reads the key with `BigUint::from_bytes_le`,
+    /// so a key is the value's bytes **least-significant first** — the reverse
+    /// of the order the same field has on the wire. up4-engine's `x4c` module
+    /// records this as an unresolved contradiction upstream; this settles it by
+    /// experiment rather than by reading, and pins the answer.
+    ///
+    /// A palindromic address cannot distinguish the two, which is why this uses
+    /// `aa:bb:cc:dd:ee:ff` and asserts the wire order does *not* match.
+    #[test]
+    fn an_exact_key_is_the_reverse_of_wire_order() {
+        const WIRE: [u8; 6] = [0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff];
+        let frame = [
+            0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, // dst, as it appears on the wire
+            0x02, 0, 0, 0, 0, 0x01, 0x08, 0x00, 0xde, 0xad,
+        ];
+        let forwards_to_7 = |key: &[u8]| {
+            let mut p = l2fwd::main_pipeline::new(4);
+            p.add_table_entry("ingress.mac_dst", "forward", key, &[7, 0], 0);
+            let mut pkt = packet_in::new(&frame);
+            let out = p.process_packet(0, &mut pkt);
+            out.len() == 1 && out[0].1 == 7
+        };
+
+        let mut reversed = WIRE;
+        reversed.reverse();
+        assert!(forwards_to_7(&reversed), "keys are least-significant-first");
+        assert!(
+            !forwards_to_7(&WIRE),
+            "wire order must NOT match, or this test proves nothing"
+        );
     }
 
     /// A miss floods, which is the whole of l2fwd's learning-free behaviour.
