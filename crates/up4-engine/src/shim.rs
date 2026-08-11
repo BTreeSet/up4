@@ -216,6 +216,30 @@ impl TableSchema {
         self.actions.iter().find(|a| a.name == name)
     }
 
+    /// Refine `key` against this table's declared match kind.
+    ///
+    /// The key half of the gate `check` provides for parameters. A backend
+    /// that stores keys opaquely (the compiled ones do) has no other place to
+    /// discover that an exact key was offered to an LPM table.
+    ///
+    /// # Errors
+    /// [`TableError::KeyKindMismatch`] naming both kinds.
+    pub fn check_key(&self, key: &TypedKey) -> Result<(), TableError> {
+        let got = match key {
+            TypedKey::Exact(v) => KeyKind::Exact(v.kind()),
+            TypedKey::Lpm { value, .. } => KeyKind::Lpm(value.kind()),
+        };
+        if got == self.key {
+            Ok(())
+        } else {
+            Err(TableError::KeyKindMismatch {
+                table: self.name,
+                want: self.key,
+                got,
+            })
+        }
+    }
+
     /// Refine `params` against `action`'s signature, checking arity and kinds.
     ///
     /// The gate every control-plane write passes through: an action reaches a
@@ -261,6 +285,16 @@ pub struct EntryDesc {
 /// Why a control-plane table operation was refused.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TableError {
+    /// The operation is meaningful for this table but the backend executing it
+    /// cannot perform it. Distinct from a malformed request: the control plane
+    /// was right and the backend is the limit, so the reason names the backend
+    /// rather than blaming the caller.
+    Unsupported {
+        /// Table the operation was aimed at.
+        table: &'static str,
+        /// What the backend cannot do, and why.
+        reason: &'static str,
+    },
     /// The pipeline has no table by that name.
     UnknownTable {
         /// Name that was asked for.
@@ -316,6 +350,9 @@ pub enum TableError {
 impl fmt::Display for TableError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Unsupported { table, reason } => {
+                write!(f, "table {table:?}: {reason}")
+            }
             Self::UnknownTable { name, known } => {
                 write!(f, "no table {name:?} (have: {})", known.join(", "))
             }
