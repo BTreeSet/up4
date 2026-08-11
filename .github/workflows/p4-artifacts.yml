@@ -1,0 +1,58 @@
+name: p4-artifacts
+
+# The heavy half of the artifact check: regenerate from the `.p4` sources with
+# the real compilers and compare bytes. That catches a hand-edited artifact,
+# which the hash-based `audit` in ci.yml cannot.
+#
+# Its own workflow because it builds p4c from source — 691 targets, tens of
+# minutes on a cold cache. That does not belong on a pull-request path: it
+# would not finish, and `cancel-in-progress` would kill it on the next push.
+# Here it runs weekly and on demand, with a warm cache and no cancellation.
+on:
+  schedule:
+    # Sunday 04:00 UTC. Nothing depends on the hour; it just needs to be quiet.
+    - cron: "0 4 * * 0"
+  workflow_dispatch:
+  push:
+    paths:
+      # A change to a source, an artifact, or the toolchain model itself is
+      # worth the full check even outside the schedule.
+      - "p4/**"
+      - "crates/up4-x4c/src/generated/**"
+      - "crates/up4-ubpf/src/generated/**"
+      - "xtask/**"
+
+permissions: {}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  verify:
+    name: artifacts are byte-identical to a fresh build
+    runs-on: ubuntu-latest
+    # p4c is the long pole. Generous on purpose: a cold cache builds two
+    # compilers, and a timeout that truncates the build teaches nothing.
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          submodules: false
+
+      # Keyed on the toolchain model, so pinning a new compiler revision
+      # invalidates the cache and nothing else does.
+      - name: Cache the P4 toolchain
+        uses: actions/cache@v4
+        with:
+          path: .toolchain
+          key: p4-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('xtask/src/tool.rs') }}
+
+      # Reports; never rewrites. The token here is read-only by design, so a
+      # job that committed a regeneration would be a hole in the trust boundary
+      # rather than a convenience. The fix is `cargo xtask generate`, by a human.
+      - name: Committed artifacts match a fresh build
+        run: cargo xtask verify

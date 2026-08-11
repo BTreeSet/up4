@@ -13,8 +13,8 @@
 //!   *data*, not actions.
 //! * [`realize`] runs a recipe into a scratch directory and returns
 //!   `(produced, committed)` pairs. It is the only code that runs a compiler.
-//! * A [`Mode`] is an interpretation of those pairs: [`Mode::Check`] discards
-//!   them, [`Mode::Generate`] copies produced over committed, [`Mode::Verify`]
+//! * A [`Mode`] is an interpretation of those pairs: [`Realized::Check`] discards
+//!   them, [`Realized::Generate`] copies produced over committed, [`Realized::Verify`]
 //!   compares bytes and reports divergence.
 //!
 //! So "regenerate" and "is the checkout stale?" are not two procedures that
@@ -44,20 +44,41 @@ use tool::{Tool, Toolchain};
 /// drifting apart.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Mode {
+    /// Compare each `.p4` against the hash recorded when its artifact was
+    /// generated. Needs **no compiler**, so it runs in a second on any
+    /// machine — which is what makes it the gate every pull request can
+    /// afford. It catches the failure that actually happens: a source edited
+    /// without regenerating.
+    Audit,
+    /// A mode that has to run the compilers first.
+    Realized(Realized),
+}
+
+/// The modes that consume `(produced, committed)` pairs, and so must build.
+///
+/// Split from [`Mode`] so that the loop over produced artifacts is total over
+/// *this* type: `Audit` returns before a compiler is provisioned, and rather
+/// than leave an unreachable arm to assert about, it is simply not in the sum
+/// the loop eliminates.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Realized {
     /// Run the compilers, keep nothing. Answers "does the source compile?".
     Check,
     /// Copy what the compilers produced over what is committed.
     Generate,
-    /// Compare bytes and fail on any difference. The CI gate.
+    /// Regenerate and compare bytes. Needs the toolchain.
     Verify,
 }
 
 impl Mode {
+    /// Whether this mode has to provision the P4 compilers. Building them
+    /// takes tens of minutes, so a mode that can avoid it must.
     fn parse(s: &str) -> Option<Self> {
         match s {
-            "check" => Some(Self::Check),
-            "generate" => Some(Self::Generate),
-            "verify" => Some(Self::Verify),
+            "audit" => Some(Self::Audit),
+            "check" => Some(Self::Realized(Realized::Check)),
+            "generate" => Some(Self::Realized(Realized::Generate)),
+            "verify" => Some(Self::Realized(Realized::Verify)),
             _ => None,
         }
     }
@@ -352,6 +373,8 @@ fn main() -> std::process::ExitCode {
         eprintln!(
             "usage: cargo xtask <check|generate|verify> [program]\n\
              \n\
+               audit     no compilers: are the .p4 sources the ones the\n\
+                         committed artifacts were generated from?\n\
                check     compile every source, keep nothing\n\
                generate  regenerate committed artifacts from the .p4 sources\n\
                verify    fail if any committed artifact differs from its source\n"
@@ -375,6 +398,10 @@ fn main() -> std::process::ExitCode {
     let mut needed: Vec<Tool> = targets.iter().flat_map(|t| t.tools()).collect();
     needed.sort_unstable();
     needed.dedup();
+
+    let Mode::Realized(mode) = mode else {
+        return audit(&targets, &root);
+    };
 
     let tc = match Toolchain::provision(&needed, &cache) {
         Ok(tc) => tc,
@@ -416,8 +443,8 @@ fn main() -> std::process::ExitCode {
                 .display()
                 .to_string();
             match mode {
-                Mode::Check => {}
-                Mode::Generate => {
+                Realized::Check => {}
+                Realized::Generate => {
                     if let Err(e) = copy(&produced, &committed) {
                         eprintln!("{e}");
                         return std::process::ExitCode::FAILURE;
@@ -426,7 +453,7 @@ fn main() -> std::process::ExitCode {
                 }
                 // Only where the compiler is reproducible; elsewhere the
                 // source witness below is the check.
-                Mode::Verify if target.fidelity() == Fidelity::ByteIdentical => {
+                Realized::Verify if target.fidelity() == Fidelity::ByteIdentical => {
                     let want = std::fs::read(&produced).unwrap_or_default();
                     let have = std::fs::read(&committed).unwrap_or_default();
                     if want != have {
@@ -437,15 +464,15 @@ fn main() -> std::process::ExitCode {
                         ));
                     }
                 }
-                Mode::Verify => {}
+                Realized::Verify => {}
             }
         }
         println!("{:<14} {}", target.label(), target.source());
     }
 
     match mode {
-        Mode::Check => println!("\n{} source(s) compile", report.checked),
-        Mode::Generate => {
+        Realized::Check => println!("\n{} source(s) compile", report.checked),
+        Realized::Generate => {
             let body = format!(
                 "# Written by `cargo xtask generate`. Each line records the .p4\n\
                  # source an artifact was produced from, and a hash of that\n\
@@ -461,7 +488,7 @@ fn main() -> std::process::ExitCode {
             }
             println!("wrote {WITNESS}");
         }
-        Mode::Verify => {
+        Realized::Verify => {
             // The witness catches the failure that actually happens: a `.p4`
             // edited without regenerating. It covers every target, including
             // the ones whose compiler is not byte-reproducible.
@@ -478,6 +505,41 @@ fn main() -> std::process::ExitCode {
         }
     }
     std::process::ExitCode::SUCCESS
+}
+
+/// The compiler-free gate: every target's source must hash to what was
+/// recorded when its artifact was generated.
+///
+/// Cost: one read and one pass per `.p4`. Nothing is built, nothing is
+/// fetched, so this is affordable on every pull request — unlike the byte
+/// comparison, which has to build two P4 compilers first.
+fn audit(targets: &[Target], root: &Path) -> std::process::ExitCode {
+    let recorded = match std::fs::read_to_string(root.join(WITNESS)) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("{WITNESS}: {e}\nRun `cargo xtask generate` to create it.");
+            return std::process::ExitCode::FAILURE;
+        }
+    };
+    let mut report = Report::default();
+    for &target in targets {
+        match witness_line(target, root) {
+            Ok(w) => {
+                if recorded.lines().any(|l| l.trim() == w) {
+                    println!("{:<14} {}", target.label(), target.source());
+                } else {
+                    report
+                        .diverged
+                        .push(format!("{}: {}", target.label(), target.source()));
+                }
+            }
+            Err(e) => {
+                eprintln!("{e}");
+                return std::process::ExitCode::FAILURE;
+            }
+        }
+    }
+    finish(&report)
 }
 
 /// Report a Verify outcome. Split out so both the byte and witness checks

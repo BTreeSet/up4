@@ -116,9 +116,9 @@ jobs:
         run: cargo run -p up4-tools --bin probe -- --peer 127.0.0.1 --pretty
 
   p4:
-    name: p4 sources compile
+    name: p4 sources match their artifacts
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -127,27 +127,20 @@ jobs:
           persist-credentials: false
           submodules: false
 
-      # The `.p4` files are the artifact of record (spec P1), and two backends
-      # are compiled from them. This job answers the question that arrangement
-      # creates: is every committed artifact still the one its source produces?
+      # The `.p4` files are the artifact of record (spec P1) and two backends
+      # are compiled from them, so the failure this job exists to catch is a
+      # source edited without regenerating.
       #
-      # `verify` provisions both P4 compilers into .toolchain/ from source, in
-      # userspace, with no root and no container, then regenerates and compares.
-      # It reports rather than rewrites: the workflow token is read-only by
-      # design, so a job that committed a fix would be a hole in the trust
-      # boundary. The fix is `cargo xtask generate`, run by a human.
+      # `audit` answers exactly that and needs no compiler: it hashes each
+      # `.p4` against the value recorded in p4/generated.lock when the artifact
+      # was produced. Seconds, on any machine.
       #
-      # Uncached by rust-cache on purpose — see the `check` job: a key names the
-      # cargo profile whose artifacts an entry holds, and .toolchain/ holds two
-      # foreign C++/Rust toolchains, which is not that.
-      - name: Cache the P4 toolchain
-        uses: actions/cache@v4
-        with:
-          path: .toolchain
-          key: p4-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('xtask/src/tool.rs') }}
-
-      - name: Committed artifacts match their .p4 sources
-        run: cargo xtask verify
+      # The stronger check — regenerate and compare bytes — has to build both
+      # P4 compilers from source, which does not fit in a pull-request job and
+      # would be killed by cancel-in-progress anyway. It lives in
+      # p4-artifacts.yml, on a schedule, with the time it needs.
+      - name: Sources match the artifacts generated from them
+        run: cargo xtask audit
 
   smoke:
     name: two routers on loopback

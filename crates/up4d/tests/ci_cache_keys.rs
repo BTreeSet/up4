@@ -94,8 +94,32 @@ fn profile_of(cmd: &str) -> Option<String> {
 /// spaces, everything else deeper — so a scanner is honest here and avoids a
 /// YAML dependency the workspace does not otherwise need (spec S2).
 fn jobs() -> BTreeMap<String, Job> {
-    let yaml =
-        std::fs::read_to_string(repo_root().join(".github/workflows/ci.yml")).expect("ci workflow");
+    // Every workflow, not just ci.yml: an invariant that one file can evade by
+    // adding another is not an invariant.
+    let dir = repo_root().join(".github/workflows");
+    let mut files: Vec<_> = std::fs::read_dir(&dir)
+        .expect("workflows directory")
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|e| e == "yml" || e == "yaml"))
+        .collect();
+    files.sort();
+    assert!(
+        !files.is_empty(),
+        "no workflows found under {}",
+        dir.display()
+    );
+    files.into_iter().flat_map(|f| jobs_in(&f)).collect()
+}
+
+/// Parse one workflow. Job keys are `file:job`, so two workflows may each have
+/// a job called `verify` without colliding.
+fn jobs_in(path: &Path) -> BTreeMap<String, Job> {
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let yaml = std::fs::read_to_string(path).expect("workflow");
     let mut jobs = BTreeMap::new();
     let mut current: Option<String> = None;
     let mut in_jobs = false;
@@ -118,8 +142,9 @@ fn jobs() -> BTreeMap<String, Job> {
             && let Some(name) = trimmed.strip_suffix(':')
             && !name.contains(' ')
         {
-            current = Some(name.to_owned());
-            jobs.entry(name.to_owned()).or_insert_with(Job::default);
+            let key = format!("{stem}:{name}");
+            current = Some(key.clone());
+            jobs.entry(key).or_insert_with(Job::default);
             continue;
         }
         let Some(job) = current.as_ref().and_then(|c| jobs.get_mut(c)) else {
@@ -196,16 +221,16 @@ fn the_scanner_reads_the_workflow_it_thinks_it_reads() {
     // Guards the parser itself: if the workflow is restructured such that jobs
     // stop being found, the assertions above would pass vacuously.
     let jobs = jobs();
-    for expected in ["check", "smoke", "p4"] {
+    for expected in ["ci:check", "ci:smoke", "ci:p4", "p4-artifacts:verify"] {
         assert!(jobs.contains_key(expected), "job `{expected}` not parsed");
     }
     assert_eq!(
-        jobs["check"].shared_key.as_deref(),
+        jobs["ci:check"].shared_key.as_deref(),
         Some("dev"),
         "the test job caches dev artifacts"
     );
     assert_eq!(
-        jobs["smoke"].shared_key.as_deref(),
+        jobs["ci:smoke"].shared_key.as_deref(),
         Some("release"),
         "the smoke job caches release artifacts"
     );
