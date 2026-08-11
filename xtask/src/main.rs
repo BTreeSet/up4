@@ -137,6 +137,7 @@ impl Target {
         match self {
             Self::X4cRust(_) => vec![format!("crates/up4-x4c/src/generated/{n}.rs")],
             Self::UbpfObject(_) => vec![
+                format!("crates/up4-ubpf/src/generated/{n}.h"),
                 format!("crates/up4-ubpf/src/generated/{n}.c"),
                 format!("crates/up4-ubpf/src/generated/{n}.o"),
             ],
@@ -258,8 +259,13 @@ fn realize(
 
             let committed = target.committed();
             Ok(vec![
-                (c, root.join(&committed[0])),
-                (obj, root.join(&committed[1])),
+                // The header carries the key and value struct layouts the host
+                // has to reproduce byte for byte, so it is part of the
+                // artifact, not a build leftover: without it the committed C
+                // does not even compile.
+                (stage.join(format!("{name}.h")), root.join(&committed[0])),
+                (c, root.join(&committed[1])),
+                (obj, root.join(&committed[2])),
             ])
         }
     }

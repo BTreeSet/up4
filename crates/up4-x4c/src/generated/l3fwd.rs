@@ -18,6 +18,82 @@ mod softnpu_provider {
     fn action(_: &str) {}
 }
 #[derive(Debug, Default, Clone)]
+pub struct headers_t {
+    pub ethernet: ethernet_h,
+    pub ipv4: ipv4_h,
+}
+impl headers_t {
+    fn valid_header_size(&self) -> usize {
+        let mut x: usize = 0;
+        if self.ethernet.valid {
+            x += ethernet_h::size();
+        }
+        if self.ipv4.valid {
+            x += ipv4_h::size();
+        }
+        x
+    }
+    fn to_bitvec(&self) -> BitVec<u8, Msb0> {
+        let mut x = bitvec![u8, Msb0; 0; self.valid_header_size()];
+        let mut off = 0;
+        if self.ethernet.valid {
+            x[off..off + ethernet_h::size()] |= self.ethernet.to_bitvec();
+            off += ethernet_h::size();
+        }
+        if self.ipv4.valid {
+            x[off..off + ipv4_h::size()] |= self.ipv4.to_bitvec();
+            off += ipv4_h::size();
+        }
+        x
+    }
+    fn dump(&self) -> String {
+        format!(
+            "{}: {}\n{}: {}",
+            "ethernet".blue(),
+            self.ethernet.dump(),
+            "ipv4".blue(),
+            self.ipv4.dump()
+        )
+    }
+}
+#[derive(Debug, Default, Clone)]
+pub struct ingress_metadata_t {
+    pub port: BitVec<u8, Msb0>,
+    pub nat: bool,
+    pub nat_id: BitVec<u8, Msb0>,
+    pub drop: bool,
+}
+impl ingress_metadata_t {
+    fn valid_header_size(&self) -> usize {
+        let mut x: usize = 0;
+        x += 16usize;
+        x += 16usize;
+        x
+    }
+    fn to_bitvec(&self) -> BitVec<u8, Msb0> {
+        let mut x = bitvec![u8, Msb0; 0; self.valid_header_size()];
+        let mut off = 0;
+        x[off..off + 16usize] |= self.port.to_bitvec();
+        off += 16usize;
+        x[off..off + 16usize] |= self.nat_id.to_bitvec();
+        off += 16usize;
+        x
+    }
+    fn dump(&self) -> String {
+        format!(
+            "{}: {}\n{}: {}\n{}: {}\n{}: {}",
+            "port".blue(),
+            p4rs::dump_bv(&self.port),
+            "nat".blue(),
+            self.nat,
+            "nat_id".blue(),
+            p4rs::dump_bv(&self.nat_id),
+            "drop".blue(),
+            self.drop
+        )
+    }
+}
+#[derive(Debug, Default, Clone)]
 pub struct ipv4_h {
     pub valid: bool,
     pub version: BitVec<u8, Msb0>,
@@ -542,45 +618,6 @@ impl ipv4_h {
     }
 }
 #[derive(Debug, Default, Clone)]
-pub struct headers_t {
-    pub ethernet: ethernet_h,
-    pub ipv4: ipv4_h,
-}
-impl headers_t {
-    fn valid_header_size(&self) -> usize {
-        let mut x: usize = 0;
-        if self.ethernet.valid {
-            x += ethernet_h::size();
-        }
-        if self.ipv4.valid {
-            x += ipv4_h::size();
-        }
-        x
-    }
-    fn to_bitvec(&self) -> BitVec<u8, Msb0> {
-        let mut x = bitvec![u8, Msb0; 0; self.valid_header_size()];
-        let mut off = 0;
-        if self.ethernet.valid {
-            x[off..off + ethernet_h::size()] |= self.ethernet.to_bitvec();
-            off += ethernet_h::size();
-        }
-        if self.ipv4.valid {
-            x[off..off + ipv4_h::size()] |= self.ipv4.to_bitvec();
-            off += ipv4_h::size();
-        }
-        x
-    }
-    fn dump(&self) -> String {
-        format!(
-            "{}: {}\n{}: {}",
-            "ethernet".blue(),
-            self.ethernet.dump(),
-            "ipv4".blue(),
-            self.ipv4.dump()
-        )
-    }
-}
-#[derive(Debug, Default, Clone)]
 pub struct ethernet_h {
     pub valid: bool,
     pub dst: BitVec<u8, Msb0>,
@@ -754,43 +791,6 @@ impl ethernet_h {
     }
 }
 #[derive(Debug, Default, Clone)]
-pub struct ingress_metadata_t {
-    pub port: BitVec<u8, Msb0>,
-    pub nat: bool,
-    pub nat_id: BitVec<u8, Msb0>,
-    pub drop: bool,
-}
-impl ingress_metadata_t {
-    fn valid_header_size(&self) -> usize {
-        let mut x: usize = 0;
-        x += 16usize;
-        x += 16usize;
-        x
-    }
-    fn to_bitvec(&self) -> BitVec<u8, Msb0> {
-        let mut x = bitvec![u8, Msb0; 0; self.valid_header_size()];
-        let mut off = 0;
-        x[off..off + 16usize] |= self.port.to_bitvec();
-        off += 16usize;
-        x[off..off + 16usize] |= self.nat_id.to_bitvec();
-        off += 16usize;
-        x
-    }
-    fn dump(&self) -> String {
-        format!(
-            "{}: {}\n{}: {}\n{}: {}\n{}: {}",
-            "port".blue(),
-            p4rs::dump_bv(&self.port),
-            "nat".blue(),
-            self.nat,
-            "nat_id".blue(),
-            p4rs::dump_bv(&self.nat_id),
-            "drop".blue(),
-            self.drop
-        )
-    }
-}
-#[derive(Debug, Default, Clone)]
 pub struct egress_metadata_t {
     pub port: BitVec<u8, Msb0>,
     pub nexthop_v6: BitVec<u8, Msb0>,
@@ -841,6 +841,34 @@ pub fn parse_start(
     pkt.extract(&mut hdr.ethernet);
     pkt.extract(&mut hdr.ipv4);
     return true;
+}
+pub fn ingress_action_forward(
+    hdr: &mut headers_t,
+    ingress: &mut ingress_metadata_t,
+    egress: &mut egress_metadata_t,
+    port: BitVec<u8, Msb0>,
+    dmac: BitVec<u8, Msb0>,
+) {
+    let dump = format!("port={}, dmac={}", port, dmac,);
+    softnpu_provider::action!(|| (&dump));
+    hdr.ipv4.ttl = p4rs::bitmath::sub_le(
+        hdr.ipv4.ttl.clone(),
+        {
+            let mut x = bitvec![mut u8, Msb0; 0; 8usize];
+            x.store_le(1u128);
+            x
+        }
+        .clone(),
+    )
+    .clone();
+    hdr.ethernet.dst = dmac.clone();
+    hdr.ipv4.hdr_checksum = {
+        let mut x = bitvec![mut u8, Msb0; 0; 16usize];
+        x.store_le(0u128);
+        x
+    }
+    .clone();
+    egress.port = port.to_owned().clone();
 }
 pub fn ingress_apply(
     hdr: &mut headers_t,
@@ -893,6 +921,15 @@ pub fn egress_apply(
     egress: &mut egress_metadata_t,
 ) {
 }
+pub fn ingress_action_drop(
+    hdr: &mut headers_t,
+    ingress: &mut ingress_metadata_t,
+    egress: &mut egress_metadata_t,
+) {
+    let dump = format!("",);
+    softnpu_provider::action!(|| (&dump));
+    egress.drop = true;
+}
 pub fn ingress_action_punt(
     hdr: &mut headers_t,
     ingress: &mut ingress_metadata_t,
@@ -907,43 +944,6 @@ pub fn ingress_action_punt(
     }
     .to_owned()
     .clone();
-}
-pub fn ingress_action_forward(
-    hdr: &mut headers_t,
-    ingress: &mut ingress_metadata_t,
-    egress: &mut egress_metadata_t,
-    port: BitVec<u8, Msb0>,
-    dmac: BitVec<u8, Msb0>,
-) {
-    let dump = format!("port={}, dmac={}", port, dmac,);
-    softnpu_provider::action!(|| (&dump));
-    hdr.ipv4.ttl = p4rs::bitmath::sub_le(
-        hdr.ipv4.ttl.clone(),
-        {
-            let mut x = bitvec![mut u8, Msb0; 0; 8usize];
-            x.store_le(1u128);
-            x
-        }
-        .clone(),
-    )
-    .clone();
-    hdr.ethernet.dst = dmac.clone();
-    hdr.ipv4.hdr_checksum = {
-        let mut x = bitvec![mut u8, Msb0; 0; 16usize];
-        x.store_le(0u128);
-        x
-    }
-    .clone();
-    egress.port = port.to_owned().clone();
-}
-pub fn ingress_action_drop(
-    hdr: &mut headers_t,
-    ingress: &mut ingress_metadata_t,
-    egress: &mut egress_metadata_t,
-) {
-    let dump = format!("",);
-    softnpu_provider::action!(|| (&dump));
-    egress.drop = true;
 }
 pub struct main_pipeline {
     pub ingress_ipv4_lpm: p4rs::table::Table<

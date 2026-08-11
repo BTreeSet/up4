@@ -18,17 +18,19 @@ mod softnpu_provider {
     fn action(_: &str) {}
 }
 #[derive(Debug, Default, Clone)]
-pub struct ingress_metadata_t {
+pub struct egress_metadata_t {
     pub port: BitVec<u8, Msb0>,
-    pub nat: bool,
-    pub nat_id: BitVec<u8, Msb0>,
+    pub nexthop_v6: BitVec<u8, Msb0>,
+    pub nexthop_v4: BitVec<u8, Msb0>,
     pub drop: bool,
+    pub broadcast: bool,
 }
-impl ingress_metadata_t {
+impl egress_metadata_t {
     fn valid_header_size(&self) -> usize {
         let mut x: usize = 0;
         x += 16usize;
-        x += 16usize;
+        x += 128usize;
+        x += 32usize;
         x
     }
     fn to_bitvec(&self) -> BitVec<u8, Msb0> {
@@ -36,47 +38,26 @@ impl ingress_metadata_t {
         let mut off = 0;
         x[off..off + 16usize] |= self.port.to_bitvec();
         off += 16usize;
-        x[off..off + 16usize] |= self.nat_id.to_bitvec();
-        off += 16usize;
+        x[off..off + 128usize] |= self.nexthop_v6.to_bitvec();
+        off += 128usize;
+        x[off..off + 32usize] |= self.nexthop_v4.to_bitvec();
+        off += 32usize;
         x
     }
     fn dump(&self) -> String {
         format!(
-            "{}: {}\n{}: {}\n{}: {}\n{}: {}",
+            "{}: {}\n{}: {}\n{}: {}\n{}: {}\n{}: {}",
             "port".blue(),
             p4rs::dump_bv(&self.port),
-            "nat".blue(),
-            self.nat,
-            "nat_id".blue(),
-            p4rs::dump_bv(&self.nat_id),
+            "nexthop_v6".blue(),
+            p4rs::dump_bv(&self.nexthop_v6),
+            "nexthop_v4".blue(),
+            p4rs::dump_bv(&self.nexthop_v4),
             "drop".blue(),
-            self.drop
+            self.drop,
+            "broadcast".blue(),
+            self.broadcast
         )
-    }
-}
-#[derive(Debug, Default, Clone)]
-pub struct headers_t {
-    pub ethernet: ethernet_h,
-}
-impl headers_t {
-    fn valid_header_size(&self) -> usize {
-        let mut x: usize = 0;
-        if self.ethernet.valid {
-            x += ethernet_h::size();
-        }
-        x
-    }
-    fn to_bitvec(&self) -> BitVec<u8, Msb0> {
-        let mut x = bitvec![u8, Msb0; 0; self.valid_header_size()];
-        let mut off = 0;
-        if self.ethernet.valid {
-            x[off..off + ethernet_h::size()] |= self.ethernet.to_bitvec();
-            off += ethernet_h::size();
-        }
-        x
-    }
-    fn dump(&self) -> String {
-        format!("{}: {}", "ethernet".blue(), self.ethernet.dump())
     }
 }
 #[derive(Debug, Default, Clone)]
@@ -253,19 +234,17 @@ impl ethernet_h {
     }
 }
 #[derive(Debug, Default, Clone)]
-pub struct egress_metadata_t {
+pub struct ingress_metadata_t {
     pub port: BitVec<u8, Msb0>,
-    pub nexthop_v6: BitVec<u8, Msb0>,
-    pub nexthop_v4: BitVec<u8, Msb0>,
+    pub nat: bool,
+    pub nat_id: BitVec<u8, Msb0>,
     pub drop: bool,
-    pub broadcast: bool,
 }
-impl egress_metadata_t {
+impl ingress_metadata_t {
     fn valid_header_size(&self) -> usize {
         let mut x: usize = 0;
         x += 16usize;
-        x += 128usize;
-        x += 32usize;
+        x += 16usize;
         x
     }
     fn to_bitvec(&self) -> BitVec<u8, Msb0> {
@@ -273,27 +252,66 @@ impl egress_metadata_t {
         let mut off = 0;
         x[off..off + 16usize] |= self.port.to_bitvec();
         off += 16usize;
-        x[off..off + 128usize] |= self.nexthop_v6.to_bitvec();
-        off += 128usize;
-        x[off..off + 32usize] |= self.nexthop_v4.to_bitvec();
-        off += 32usize;
+        x[off..off + 16usize] |= self.nat_id.to_bitvec();
+        off += 16usize;
         x
     }
     fn dump(&self) -> String {
         format!(
-            "{}: {}\n{}: {}\n{}: {}\n{}: {}\n{}: {}",
+            "{}: {}\n{}: {}\n{}: {}\n{}: {}",
             "port".blue(),
             p4rs::dump_bv(&self.port),
-            "nexthop_v6".blue(),
-            p4rs::dump_bv(&self.nexthop_v6),
-            "nexthop_v4".blue(),
-            p4rs::dump_bv(&self.nexthop_v4),
+            "nat".blue(),
+            self.nat,
+            "nat_id".blue(),
+            p4rs::dump_bv(&self.nat_id),
             "drop".blue(),
-            self.drop,
-            "broadcast".blue(),
-            self.broadcast
+            self.drop
         )
     }
+}
+#[derive(Debug, Default, Clone)]
+pub struct headers_t {
+    pub ethernet: ethernet_h,
+}
+impl headers_t {
+    fn valid_header_size(&self) -> usize {
+        let mut x: usize = 0;
+        if self.ethernet.valid {
+            x += ethernet_h::size();
+        }
+        x
+    }
+    fn to_bitvec(&self) -> BitVec<u8, Msb0> {
+        let mut x = bitvec![u8, Msb0; 0; self.valid_header_size()];
+        let mut off = 0;
+        if self.ethernet.valid {
+            x[off..off + ethernet_h::size()] |= self.ethernet.to_bitvec();
+            off += ethernet_h::size();
+        }
+        x
+    }
+    fn dump(&self) -> String {
+        format!("{}: {}", "ethernet".blue(), self.ethernet.dump())
+    }
+}
+pub fn ingress_action_forward(
+    hdr: &mut headers_t,
+    ingress: &mut ingress_metadata_t,
+    egress: &mut egress_metadata_t,
+    port: BitVec<u8, Msb0>,
+) {
+    let dump = format!("port={}", port,);
+    softnpu_provider::action!(|| (&dump));
+    egress.port = port.to_owned().clone();
+}
+pub fn parse_start(
+    pkt: &mut packet_in,
+    hdr: &mut headers_t,
+    ingress: &mut ingress_metadata_t,
+) -> bool {
+    pkt.extract(&mut hdr.ethernet);
+    return true;
 }
 pub fn egress_apply(
     hdr: &mut headers_t,
@@ -314,23 +332,23 @@ pub fn ingress_mac_dst() -> p4rs::table::Table<
     >::new();
     mac_dst_table
 }
-pub fn parse_start(
-    pkt: &mut packet_in,
-    hdr: &mut headers_t,
-    ingress: &mut ingress_metadata_t,
-) -> bool {
-    pkt.extract(&mut hdr.ethernet);
-    return true;
-}
-pub fn ingress_action_forward(
+pub fn ingress_action_drop(
     hdr: &mut headers_t,
     ingress: &mut ingress_metadata_t,
     egress: &mut egress_metadata_t,
-    port: BitVec<u8, Msb0>,
 ) {
-    let dump = format!("port={}", port,);
+    let dump = format!("",);
     softnpu_provider::action!(|| (&dump));
-    egress.port = port.to_owned().clone();
+    egress.drop = true;
+}
+pub fn ingress_action_broadcast(
+    hdr: &mut headers_t,
+    ingress: &mut ingress_metadata_t,
+    egress: &mut egress_metadata_t,
+) {
+    let dump = format!("",);
+    softnpu_provider::action!(|| (&dump));
+    egress.broadcast = true;
 }
 pub fn ingress_apply(
     hdr: &mut headers_t,
@@ -349,24 +367,6 @@ pub fn ingress_apply(
         softnpu_provider::control_table_miss!(|| "ingress_table_mac_dst");
         ingress_action_broadcast(hdr, ingress, egress);
     }
-}
-pub fn ingress_action_broadcast(
-    hdr: &mut headers_t,
-    ingress: &mut ingress_metadata_t,
-    egress: &mut egress_metadata_t,
-) {
-    let dump = format!("",);
-    softnpu_provider::action!(|| (&dump));
-    egress.broadcast = true;
-}
-pub fn ingress_action_drop(
-    hdr: &mut headers_t,
-    ingress: &mut ingress_metadata_t,
-    egress: &mut egress_metadata_t,
-) {
-    let dump = format!("",);
-    softnpu_provider::action!(|| (&dump));
-    egress.drop = true;
 }
 pub struct main_pipeline {
     pub ingress_mac_dst: p4rs::table::Table<
