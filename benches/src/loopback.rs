@@ -40,6 +40,20 @@ impl Fixture {
     /// one socket and vport 1 egresses to the other. `setup` installs whatever
     /// control-plane state the benchmark needs before the datapath starts.
     pub fn start(pipeline_name: &str, setup: impl FnOnce(&dyn Pipeline)) -> Self {
+        Self::start_on(pipeline_name, None, setup)
+    }
+
+    /// [`Fixture::start`] with the program executed by a named backend.
+    ///
+    /// A *program* is configured; which backend runs it is a separate axis, so
+    /// nothing else about the node changes — same sockets, same shard, same
+    /// routes. That is what makes a backend-to-backend throughput comparison
+    /// mean something.
+    pub fn start_on(
+        pipeline_name: &str,
+        backend: Option<&str>,
+        setup: impl FnOnce(&dyn Pipeline),
+    ) -> Self {
         let bind = |port| {
             FabricSocket::bind(format!("127.0.0.1:{port}").parse().expect("literal"), false)
                 .expect("bind")
@@ -61,7 +75,7 @@ impl Fixture {
         let metrics = Arc::new(Metrics::new("bench", &topology));
 
         let pipeline: Arc<dyn Pipeline> = Arc::from(up4_catalog::build(
-            up4_engine::catalog::Selection::parse(pipeline_name, None).expect("known program"),
+            up4_engine::catalog::Selection::parse(pipeline_name, backend).expect("known program"),
             &PipelineParams::new([0, 1]),
         ));
         setup(&*pipeline);

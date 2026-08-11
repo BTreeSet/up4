@@ -193,3 +193,48 @@ cost to `native` because `native` is not wrapped: it already computes both ends
 itself, and `up4_catalog::build` composes them only onto the backends that do
 not.
 
+### e2e — what the *switch* does, per backend
+
+`cargo bench -p benches --bench e2e`. The whole path: generator → socket →
+shard → pipeline → socket → generator, `l3fwd` with 1000 routes, 64 frames per
+offered batch. The measured loop includes the generator's own send and receive,
+so the switch is doing better than these numbers alone show. Every
+configuration recovered 64/64 frames, so these measure the switch and not a
+starved generator.
+
+| backend | 64 B | | 1460 B | | vs `native` |
+|---|---|---|---|---|---|
+| | kpps | Gbps | kpps | Gbps | at 1460 B |
+| `native` | **1844** | 0.94 | **856** | **10.0** | 1× |
+| `ubpf` (interpreted) | 282 | 0.15 | 229 | 2.67 | 3.7× slower |
+| `x4c` | 3.2 | 0.002 | 3.2 | 0.038 | 266× slower |
+
+**The per-frame ratios do not survive contact with the socket path, and that is
+the point of measuring both.** `backends` puts `ubpf` at 44× `native` for this
+configuration; end to end it is 3.7×. The difference is that every backend pays
+the same ~1.17 µs per frame for `recvmmsg`, the GRO segment walk, and
+`sendmmsg`, and against that budget `native`'s 67.5 ns pipeline is 6% of the
+frame while `ubpf`'s 3.00 µs is 69% of it.
+
+That split is also the answer to whether the uBPF JIT is worth having. A
+backend whose pipeline is 6% of the frame budget cannot be helped by making the
+pipeline faster — `native` is I/O-bound and would not move. A backend at 69% is
+almost purely pipeline-bound, so time cut from interpretation converts to
+throughput at close to 1:1. The JIT has room to recover precisely because the
+interpreter does not.
+
+`x4c` is pipeline-bound to the point that **frame size no longer matters**:
+19.9 ms per batch at 64 B and at 1460 B alike. At 3.2 kpps the socket path is
+idle and the linear LPM scan (D9, ~290 ns per installed route) is the entire
+cost. It is a provenance and conformance backend — a real P4 compiler emitting
+real Rust, checked against the same corpus — and not a way to carry traffic.
+
+Not measured: `ubpf` under `ExecMode::Jit`. This box is aarch64, where the
+variant does not exist. On x86-64 it is the default (D11) and the corpus covers
+it, but no throughput figure is quoted for it here.
+
+Also not measured: more than one shard. up4 runs `threads = N` shard threads and
+the pipeline is the parallel part, so a pipeline-bound backend should scale with
+cores in a way an I/O-bound one does not. That is a plausible mitigation for
+`ubpf`, not a measured one, and it is not claimed as a number anywhere.
+

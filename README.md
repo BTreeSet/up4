@@ -35,8 +35,9 @@ source of truth for what the switch does.
   syscalls (`recvmmsg`) and UDP GSO/GRO through
   [quinn-udp](https://crates.io/crates/quinn-udp), the same code path that
   moves QUIC traffic in Firefox. On a 4-core development box, over loopback,
-  the full path with a 1000-route `l3fwd` sustains **849 kpps / 9.9 Gbps** of
-  inner traffic at 1460 B, and the datapath allocates nothing per frame.
+  the full path with a 1000-route `l3fwd` on the `native` backend sustains
+  **856 kpps / 10.0 Gbps** of inner traffic at 1460 B, and the datapath
+  allocates nothing per frame.
   Numbers and machine: [benches/RESULTS.md](benches/RESULTS.md).
 - **Verified behavior, not asserted behavior.** Every supported P4 program
   ships with a packet corpus whose expectations come from an independent
@@ -81,18 +82,24 @@ up4 is named for uBPF's idea — the same programs, running where you have
 permission. Making that true means more than one route from `.p4` to running
 code, so up4 ships three and lets you choose:
 
-| `--backend` | Where the code comes from | Allocates per frame | Cost per frame |
+| `--backend` | Where the code comes from | Allocates per frame | End-to-end throughput |
 | --- | --- | --- | --- |
-| `native` | Rust, hand-rendered from the SoftNPU source block for block | no | **30-38 ns** — the default, and what the throughput runs use |
-| `x4c` | [x4c](https://github.com/oxidecomputer/p4) → Rust, committed under `crates/up4-x4c/src/generated/` | **yes** (D9) | 4.8-297 µs — a real P4 compiler emitting real Rust, at real cost |
-| `ubpf` | `p4c --target ubpf` → BPF bytecode, run in-process on [rbpf](https://crates.io/crates/rbpf) | no | 1.1-2.9 µs interpreted — full P4 expressiveness; JIT-compiled on x86-64 (D11) |
+| `native` | Rust, hand-rendered from the SoftNPU source block for block | no | **856 kpps / 10.0 Gbps** — the default, and what the throughput runs use |
+| `ubpf` | `p4c --target ubpf` → BPF bytecode, run in-process on [rbpf](https://crates.io/crates/rbpf) | no | 229 kpps / 2.7 Gbps interpreted — full P4 expressiveness; JIT-compiled on x86-64 (D11) |
+| `x4c` | [x4c](https://github.com/oxidecomputer/p4) → Rust, committed under `crates/up4-x4c/src/generated/` | **yes** (D9) | 3.2 kpps / 38 Mbps — provenance, not transport |
 
-Measured on aarch64 at 64 B, so the `ubpf` figures are the interpreter; the
-JIT is the default on x86-64 and has not been measured yet. `x4c`'s upper
-figure is `l3fwd` with a thousand routes, where its LPM table is searched
-linearly — about 290 ns per installed route. Pick `x4c` when what matters is
-that a P4 compiler produced the Rust, not when throughput does.
-[benches/RESULTS.md](benches/RESULTS.md) has the full table and the machine.
+Loopback, one shard, `l3fwd` with 1000 routes at 1460 B, on a 4-core aarch64
+box. The `ubpf` figure is the **interpreter**: this machine has no JIT variant,
+and the JIT is the default on x86-64 but is not measured yet.
+
+Two things worth knowing before choosing. Per *frame* `ubpf` is 44× `native`,
+but end to end only 3.7× — every backend pays the same ~1.17 µs of socket path,
+which `native`'s 67 ns pipeline disappears into and `ubpf`'s 3 µs does not.
+And `x4c` is pipeline-bound to the point that frame size stops mattering: its
+LPM table is searched linearly, about 290 ns per installed route. Pick `x4c`
+when what matters is that a P4 compiler produced the Rust; it is checked
+against the same corpus as the other two and is not a way to carry traffic.
+[benches/RESULTS.md](benches/RESULTS.md) has the full tables and the machine.
 
 They are interchangeable, not merely coexisting: `up4_catalog::build` is total
 over `Program × Backend`, every backend of a program exposes the same tables to
