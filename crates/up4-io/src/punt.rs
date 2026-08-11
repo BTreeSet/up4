@@ -147,6 +147,8 @@ impl PuntQueue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
     fn frames_come_back_in_order_with_their_metadata() {
@@ -224,33 +226,50 @@ mod tests {
 
     #[test]
     fn producers_and_the_consumer_may_run_concurrently() {
-        let q = std::sync::Arc::new(PuntQueue::with_depth(8, 64));
-        let producers: Vec<_> = (0..4u16)
+        const PRODUCERS: u16 = 4;
+        const PUSHES: usize = 1000;
+        const DEPTH: usize = 8;
+
+        let q = Arc::new(PuntQueue::with_depth(DEPTH, 64));
+        // The consumer needs an exit condition that some invariant actually
+        // implies. "Drain until N frames arrive" is not one: the ring is
+        // bounded and lossy on purpose, so the frames it accepts are
+        // `DEPTH + already drained`, never a function of how many were
+        // offered. Once the producers stop, `drain` returns empty forever and
+        // a count-based guard spins for good. Producers still running is a
+        // fact this test owns, and it becomes false in bounded time.
+        let live = Arc::new(AtomicUsize::new(PRODUCERS as usize));
+
+        let producers: Vec<_> = (0..PRODUCERS)
             .map(|id| {
-                let q = std::sync::Arc::clone(&q);
+                let (q, live) = (Arc::clone(&q), Arc::clone(&live));
                 std::thread::spawn(move || {
-                    let mut accepted = 0;
-                    for _ in 0..1000 {
-                        if q.push(b"x", id, 0) {
-                            accepted += 1;
-                        }
-                    }
+                    let accepted = (0..PUSHES).fold(0, |n, _| n + usize::from(q.push(b"x", id, 0)));
+                    live.fetch_sub(1, Ordering::Release);
                     accepted
                 })
             })
             .collect();
+
         let mut drained = 0;
-        while drained < 100 {
-            drained += q.drain(8).len();
+        while live.load(Ordering::Acquire) > 0 {
+            drained += q.drain(DEPTH).len();
+            std::thread::yield_now();
         }
+        // Reading zero live producers happens-after every producer's last
+        // push, so nothing can arrive behind this final sweep.
+        drained += q.drain(usize::MAX).len();
+
         let accepted: usize = producers
             .into_iter()
             .map(|h| h.join().expect("producer"))
             .sum();
-        assert_eq!(
-            accepted,
-            drained + q.len(),
-            "every accepted frame is accounted for"
+        assert_eq!(accepted, drained, "every accepted frame is accounted for");
+        assert!(
+            (DEPTH..=PRODUCERS as usize * PUSHES).contains(&accepted),
+            "a refused push proves DEPTH resident frames were accepted, and \
+             nothing is invented: got {accepted}"
         );
+        assert!(q.is_empty(), "the final sweep leaves nothing behind");
     }
 }
