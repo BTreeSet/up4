@@ -11,6 +11,7 @@ members = [
     "crates/up4d",
     "crates/up4-tools",
     "benches",
+    "xtask",
 ]
 
 [workspace.package]

@@ -1,0 +1,7 @@
+# Written by `cargo xtask generate`. Each line records the .p4
+# source an artifact was produced from, and a hash of that
+# source at the time. `cargo xtask verify` recomputes it.
+l2fwd/x4c  p4/programs/l2fwd/l2fwd.softnpu.p4  149865e82ed37850
+l2fwd/ubpf  p4/programs/l2fwd/l2fwd.ubpf.p4  6858d7eb4baa0c9d
+l3fwd/x4c  p4/programs/l3fwd/l3fwd.softnpu.p4  eab6a27f48265790
+l3fwd/ubpf  p4/programs/l3fwd/l3fwd.ubpf.p4  fdc4bc28363712e3

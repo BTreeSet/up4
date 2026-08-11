@@ -18,8 +18,6 @@
 //! rather than asserting anything of its own. A backend that gets slower or
 //! changes provenance says so itself; nothing has to remember to update prose.
 
-use crate::{Pipeline, PipelineParams};
-
 /// A P4 program up4 ships.
 ///
 /// Closed on purpose: every backend implements every program, which is the
@@ -328,6 +326,8 @@ impl Selection {
     /// Every selection this binary can load.
     #[must_use]
     pub fn all() -> Vec<Self> {
+        // `mut` is used only when the oracle feature adds a variant.
+        #[cfg_attr(not(feature = "oracle"), allow(unused_mut))]
         let mut out: Vec<Self> = Program::ALL
             .into_iter()
             .flat_map(|program| {
@@ -361,9 +361,8 @@ impl Selection {
         })?;
         let backend = match backend {
             None => Backend::Native,
-            Some(b) => Backend::parse(b).ok_or_else(|| SelectError::UnknownBackend {
-                got: b.to_owned(),
-            })?,
+            Some(b) => Backend::parse(b)
+                .ok_or_else(|| SelectError::UnknownBackend { got: b.to_owned() })?,
         };
         Ok(Self::P4 { program, backend })
     }
@@ -420,47 +419,13 @@ impl Selection {
     }
 }
 
-/// Load a selection.
-///
-/// Total: `Selection` is closed and every variant is implemented, so unlike a
-/// name lookup this cannot fail. An unknown pipeline stops at
-/// [`Selection::parse`], at configuration time, with the alternatives listed.
-#[must_use]
-pub fn build(sel: Selection, params: &PipelineParams) -> Box<dyn Pipeline> {
-    match sel {
-        Selection::P4 {
-            program,
-            backend: Backend::Native,
-        } => match program {
-            Program::L2Fwd => Box::new(crate::programs::l2fwd::L2Fwd::new(params)),
-            Program::L3Fwd => Box::new(crate::programs::l3fwd::L3Fwd::new(params)),
-        },
-        Selection::P4 {
-            program,
-            backend: Backend::X4c,
-        } => crate::backends::x4c_gen::build(program, params),
-        Selection::P4 {
-            program,
-            backend: Backend::Ubpf,
-        } => crate::backends::ubpf::build(program, params),
-        #[cfg(feature = "oracle")]
-        Selection::Oracle => Box::new(crate::programs::null::NullPipeline::new(params)),
-    }
-}
+// `build(Selection, &PipelineParams) -> Box<dyn Pipeline>` lands with the
+// adapters, in the crate above the backends: it is total over `Selection`, so
+// it cannot be written until every variant has an implementation to name.
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn every_selection_builds_and_names_itself() {
-        let params = PipelineParams::new([0, 1]);
-        for sel in Selection::all() {
-            let p = build(sel, &params);
-            assert_eq!(p.name(), sel.name(), "pipeline reports its selection");
-            assert_eq!(p.engine().name(), sel.name(), "engine agrees");
-        }
-    }
 
     #[test]
     fn selection_names_are_unique() {

@@ -1,0 +1,6 @@
+[alias]
+# One entry point for everything the repository generates.
+#   cargo xtask check     — do the .p4 sources compile?
+#   cargo xtask generate  — regenerate committed artifacts
+#   cargo xtask verify    — are the committed artifacts current? (the CI gate)
+xtask = "run --quiet -p xtask --"

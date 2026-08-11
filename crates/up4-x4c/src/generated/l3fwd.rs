@@ -18,222 +18,6 @@ mod softnpu_provider {
     fn action(_: &str) {}
 }
 #[derive(Debug, Default, Clone)]
-pub struct ethernet_h {
-    pub valid: bool,
-    pub dst: BitVec<u8, Msb0>,
-    pub src: BitVec<u8, Msb0>,
-    pub ether_type: BitVec<u8, Msb0>,
-}
-impl Header for ethernet_h {
-    fn new() -> Self {
-        Self {
-            valid: false,
-            dst: BitVec::<u8, Msb0>::default(),
-            src: BitVec::<u8, Msb0>::default(),
-            ether_type: BitVec::<u8, Msb0>::default(),
-        }
-    }
-    fn set(&mut self, buf: &[u8]) -> Result<(), TryFromSliceError> {
-        self.dst = {
-            let mut b = buf.view_bits::<Msb0>()[0usize..48usize].to_owned();
-            if 48usize - 0usize > 8 {
-                let mut v = b.into_vec();
-                v.reverse();
-                if ((48usize - 0usize) % 8) != 0 {
-                    if let Some(x) = v.iter_mut().last() {
-                        *x <<= (0usize % 8);
-                    }
-                }
-                let mut b = BitVec::<u8, Msb0>::from_vec(v);
-                b.resize(48usize - 0usize, false);
-                b
-            } else {
-                b
-            }
-        };
-        self.src = {
-            let mut b = buf.view_bits::<Msb0>()[48usize..96usize].to_owned();
-            if 96usize - 48usize > 8 {
-                let mut v = b.into_vec();
-                v.reverse();
-                if ((96usize - 48usize) % 8) != 0 {
-                    if let Some(x) = v.iter_mut().last() {
-                        *x <<= (48usize % 8);
-                    }
-                }
-                let mut b = BitVec::<u8, Msb0>::from_vec(v);
-                b.resize(96usize - 48usize, false);
-                b
-            } else {
-                b
-            }
-        };
-        self.ether_type = {
-            let mut b = buf.view_bits::<Msb0>()[96usize..112usize].to_owned();
-            if 112usize - 96usize > 8 {
-                let mut v = b.into_vec();
-                v.reverse();
-                if ((112usize - 96usize) % 8) != 0 {
-                    if let Some(x) = v.iter_mut().last() {
-                        *x <<= (96usize % 8);
-                    }
-                }
-                let mut b = BitVec::<u8, Msb0>::from_vec(v);
-                b.resize(112usize - 96usize, false);
-                b
-            } else {
-                b
-            }
-        };
-        Ok(())
-    }
-    fn size() -> usize {
-        112usize
-    }
-    fn set_valid(&mut self) {
-        self.valid = true;
-    }
-    fn set_invalid(&mut self) {
-        self.valid = false;
-    }
-    fn is_valid(&self) -> bool {
-        self.valid
-    }
-    fn to_bitvec(&self) -> BitVec<u8, Msb0> {
-        let mut x = bitvec![u8, Msb0; 0u8; Self::size()];
-        if 48usize - 0usize > 8 {
-            let mut v = self.dst.clone().into_vec();
-            if ((48usize - 0usize) % 8) != 0 {
-                if let Some(x) = v.iter_mut().last() {
-                    *x >>= ((48usize - 0usize) % 8);
-                }
-            }
-            v.reverse();
-            let n = (48usize - 0usize);
-            let m = n % 8;
-            let mut b = BitVec::<u8, Msb0>::from_vec(v);
-            if b.len() > m {
-                x[0usize..48usize] |= &b[m..];
-            }
-        } else {
-            x[0usize..48usize] |= self.dst.to_owned();
-        };
-        if 96usize - 48usize > 8 {
-            let mut v = self.src.clone().into_vec();
-            if ((96usize - 48usize) % 8) != 0 {
-                if let Some(x) = v.iter_mut().last() {
-                    *x >>= ((96usize - 48usize) % 8);
-                }
-            }
-            v.reverse();
-            let n = (96usize - 48usize);
-            let m = n % 8;
-            let mut b = BitVec::<u8, Msb0>::from_vec(v);
-            if b.len() > m {
-                x[48usize..96usize] |= &b[m..];
-            }
-        } else {
-            x[48usize..96usize] |= self.src.to_owned();
-        };
-        if 112usize - 96usize > 8 {
-            let mut v = self.ether_type.clone().into_vec();
-            if ((112usize - 96usize) % 8) != 0 {
-                if let Some(x) = v.iter_mut().last() {
-                    *x >>= ((112usize - 96usize) % 8);
-                }
-            }
-            v.reverse();
-            let n = (112usize - 96usize);
-            let m = n % 8;
-            let mut b = BitVec::<u8, Msb0>::from_vec(v);
-            if b.len() > m {
-                x[96usize..112usize] |= &b[m..];
-            }
-        } else {
-            x[96usize..112usize] |= self.ether_type.to_owned();
-        };
-        x
-    }
-}
-impl Checksum for ethernet_h {
-    fn csum(&self) -> BitVec<u8, Msb0> {
-        let mut csum = BitVec::new();
-        csum = p4rs::bitmath::add_le(csum.clone(), self.dst.csum());
-        csum = p4rs::bitmath::add_le(csum.clone(), self.src.csum());
-        csum = p4rs::bitmath::add_le(csum.clone(), self.ether_type.csum());
-        csum
-    }
-}
-impl ethernet_h {
-    fn setValid(&mut self) {
-        self.valid = true;
-    }
-    fn setInvalid(&mut self) {
-        self.valid = false;
-    }
-    fn isValid(&self) -> bool {
-        self.valid
-    }
-    fn dump(&self) -> String {
-        if self.isValid() {
-            format!(
-                "{} {} {} {} {} {}",
-                "dst".cyan(),
-                p4rs::dump_bv(&self.dst),
-                "src".cyan(),
-                p4rs::dump_bv(&self.src),
-                "ether_type".cyan(),
-                p4rs::dump_bv(&self.ether_type)
-            )
-        } else {
-            "∅".to_owned()
-        }
-    }
-}
-#[derive(Debug, Default, Clone)]
-pub struct egress_metadata_t {
-    pub port: BitVec<u8, Msb0>,
-    pub nexthop_v6: BitVec<u8, Msb0>,
-    pub nexthop_v4: BitVec<u8, Msb0>,
-    pub drop: bool,
-    pub broadcast: bool,
-}
-impl egress_metadata_t {
-    fn valid_header_size(&self) -> usize {
-        let mut x: usize = 0;
-        x += 16usize;
-        x += 128usize;
-        x += 32usize;
-        x
-    }
-    fn to_bitvec(&self) -> BitVec<u8, Msb0> {
-        let mut x = bitvec![u8, Msb0; 0; self.valid_header_size()];
-        let mut off = 0;
-        x[off..off + 16usize] |= self.port.to_bitvec();
-        off += 16usize;
-        x[off..off + 128usize] |= self.nexthop_v6.to_bitvec();
-        off += 128usize;
-        x[off..off + 32usize] |= self.nexthop_v4.to_bitvec();
-        off += 32usize;
-        x
-    }
-    fn dump(&self) -> String {
-        format!(
-            "{}: {}\n{}: {}\n{}: {}\n{}: {}\n{}: {}",
-            "port".blue(),
-            p4rs::dump_bv(&self.port),
-            "nexthop_v6".blue(),
-            p4rs::dump_bv(&self.nexthop_v6),
-            "nexthop_v4".blue(),
-            p4rs::dump_bv(&self.nexthop_v4),
-            "drop".blue(),
-            self.drop,
-            "broadcast".blue(),
-            self.broadcast
-        )
-    }
-}
-#[derive(Debug, Default, Clone)]
 pub struct ipv4_h {
     pub valid: bool,
     pub version: BitVec<u8, Msb0>,
@@ -758,43 +542,6 @@ impl ipv4_h {
     }
 }
 #[derive(Debug, Default, Clone)]
-pub struct ingress_metadata_t {
-    pub port: BitVec<u8, Msb0>,
-    pub nat: bool,
-    pub nat_id: BitVec<u8, Msb0>,
-    pub drop: bool,
-}
-impl ingress_metadata_t {
-    fn valid_header_size(&self) -> usize {
-        let mut x: usize = 0;
-        x += 16usize;
-        x += 16usize;
-        x
-    }
-    fn to_bitvec(&self) -> BitVec<u8, Msb0> {
-        let mut x = bitvec![u8, Msb0; 0; self.valid_header_size()];
-        let mut off = 0;
-        x[off..off + 16usize] |= self.port.to_bitvec();
-        off += 16usize;
-        x[off..off + 16usize] |= self.nat_id.to_bitvec();
-        off += 16usize;
-        x
-    }
-    fn dump(&self) -> String {
-        format!(
-            "{}: {}\n{}: {}\n{}: {}\n{}: {}",
-            "port".blue(),
-            p4rs::dump_bv(&self.port),
-            "nat".blue(),
-            self.nat,
-            "nat_id".blue(),
-            p4rs::dump_bv(&self.nat_id),
-            "drop".blue(),
-            self.drop
-        )
-    }
-}
-#[derive(Debug, Default, Clone)]
 pub struct headers_t {
     pub ethernet: ethernet_h,
     pub ipv4: ipv4_h,
@@ -833,20 +580,258 @@ impl headers_t {
         )
     }
 }
-pub fn ingress_action_drop(
-    hdr: &mut headers_t,
-    ingress: &mut ingress_metadata_t,
-    egress: &mut egress_metadata_t,
-) {
-    let dump = format!("",);
-    softnpu_provider::action!(|| (&dump));
-    egress.drop = true;
+#[derive(Debug, Default, Clone)]
+pub struct ethernet_h {
+    pub valid: bool,
+    pub dst: BitVec<u8, Msb0>,
+    pub src: BitVec<u8, Msb0>,
+    pub ether_type: BitVec<u8, Msb0>,
 }
-pub fn egress_apply(
-    hdr: &mut headers_t,
-    ingress: &mut ingress_metadata_t,
-    egress: &mut egress_metadata_t,
-) {
+impl Header for ethernet_h {
+    fn new() -> Self {
+        Self {
+            valid: false,
+            dst: BitVec::<u8, Msb0>::default(),
+            src: BitVec::<u8, Msb0>::default(),
+            ether_type: BitVec::<u8, Msb0>::default(),
+        }
+    }
+    fn set(&mut self, buf: &[u8]) -> Result<(), TryFromSliceError> {
+        self.dst = {
+            let mut b = buf.view_bits::<Msb0>()[0usize..48usize].to_owned();
+            if 48usize - 0usize > 8 {
+                let mut v = b.into_vec();
+                v.reverse();
+                if ((48usize - 0usize) % 8) != 0 {
+                    if let Some(x) = v.iter_mut().last() {
+                        *x <<= (0usize % 8);
+                    }
+                }
+                let mut b = BitVec::<u8, Msb0>::from_vec(v);
+                b.resize(48usize - 0usize, false);
+                b
+            } else {
+                b
+            }
+        };
+        self.src = {
+            let mut b = buf.view_bits::<Msb0>()[48usize..96usize].to_owned();
+            if 96usize - 48usize > 8 {
+                let mut v = b.into_vec();
+                v.reverse();
+                if ((96usize - 48usize) % 8) != 0 {
+                    if let Some(x) = v.iter_mut().last() {
+                        *x <<= (48usize % 8);
+                    }
+                }
+                let mut b = BitVec::<u8, Msb0>::from_vec(v);
+                b.resize(96usize - 48usize, false);
+                b
+            } else {
+                b
+            }
+        };
+        self.ether_type = {
+            let mut b = buf.view_bits::<Msb0>()[96usize..112usize].to_owned();
+            if 112usize - 96usize > 8 {
+                let mut v = b.into_vec();
+                v.reverse();
+                if ((112usize - 96usize) % 8) != 0 {
+                    if let Some(x) = v.iter_mut().last() {
+                        *x <<= (96usize % 8);
+                    }
+                }
+                let mut b = BitVec::<u8, Msb0>::from_vec(v);
+                b.resize(112usize - 96usize, false);
+                b
+            } else {
+                b
+            }
+        };
+        Ok(())
+    }
+    fn size() -> usize {
+        112usize
+    }
+    fn set_valid(&mut self) {
+        self.valid = true;
+    }
+    fn set_invalid(&mut self) {
+        self.valid = false;
+    }
+    fn is_valid(&self) -> bool {
+        self.valid
+    }
+    fn to_bitvec(&self) -> BitVec<u8, Msb0> {
+        let mut x = bitvec![u8, Msb0; 0u8; Self::size()];
+        if 48usize - 0usize > 8 {
+            let mut v = self.dst.clone().into_vec();
+            if ((48usize - 0usize) % 8) != 0 {
+                if let Some(x) = v.iter_mut().last() {
+                    *x >>= ((48usize - 0usize) % 8);
+                }
+            }
+            v.reverse();
+            let n = (48usize - 0usize);
+            let m = n % 8;
+            let mut b = BitVec::<u8, Msb0>::from_vec(v);
+            if b.len() > m {
+                x[0usize..48usize] |= &b[m..];
+            }
+        } else {
+            x[0usize..48usize] |= self.dst.to_owned();
+        };
+        if 96usize - 48usize > 8 {
+            let mut v = self.src.clone().into_vec();
+            if ((96usize - 48usize) % 8) != 0 {
+                if let Some(x) = v.iter_mut().last() {
+                    *x >>= ((96usize - 48usize) % 8);
+                }
+            }
+            v.reverse();
+            let n = (96usize - 48usize);
+            let m = n % 8;
+            let mut b = BitVec::<u8, Msb0>::from_vec(v);
+            if b.len() > m {
+                x[48usize..96usize] |= &b[m..];
+            }
+        } else {
+            x[48usize..96usize] |= self.src.to_owned();
+        };
+        if 112usize - 96usize > 8 {
+            let mut v = self.ether_type.clone().into_vec();
+            if ((112usize - 96usize) % 8) != 0 {
+                if let Some(x) = v.iter_mut().last() {
+                    *x >>= ((112usize - 96usize) % 8);
+                }
+            }
+            v.reverse();
+            let n = (112usize - 96usize);
+            let m = n % 8;
+            let mut b = BitVec::<u8, Msb0>::from_vec(v);
+            if b.len() > m {
+                x[96usize..112usize] |= &b[m..];
+            }
+        } else {
+            x[96usize..112usize] |= self.ether_type.to_owned();
+        };
+        x
+    }
+}
+impl Checksum for ethernet_h {
+    fn csum(&self) -> BitVec<u8, Msb0> {
+        let mut csum = BitVec::new();
+        csum = p4rs::bitmath::add_le(csum.clone(), self.dst.csum());
+        csum = p4rs::bitmath::add_le(csum.clone(), self.src.csum());
+        csum = p4rs::bitmath::add_le(csum.clone(), self.ether_type.csum());
+        csum
+    }
+}
+impl ethernet_h {
+    fn setValid(&mut self) {
+        self.valid = true;
+    }
+    fn setInvalid(&mut self) {
+        self.valid = false;
+    }
+    fn isValid(&self) -> bool {
+        self.valid
+    }
+    fn dump(&self) -> String {
+        if self.isValid() {
+            format!(
+                "{} {} {} {} {} {}",
+                "dst".cyan(),
+                p4rs::dump_bv(&self.dst),
+                "src".cyan(),
+                p4rs::dump_bv(&self.src),
+                "ether_type".cyan(),
+                p4rs::dump_bv(&self.ether_type)
+            )
+        } else {
+            "∅".to_owned()
+        }
+    }
+}
+#[derive(Debug, Default, Clone)]
+pub struct ingress_metadata_t {
+    pub port: BitVec<u8, Msb0>,
+    pub nat: bool,
+    pub nat_id: BitVec<u8, Msb0>,
+    pub drop: bool,
+}
+impl ingress_metadata_t {
+    fn valid_header_size(&self) -> usize {
+        let mut x: usize = 0;
+        x += 16usize;
+        x += 16usize;
+        x
+    }
+    fn to_bitvec(&self) -> BitVec<u8, Msb0> {
+        let mut x = bitvec![u8, Msb0; 0; self.valid_header_size()];
+        let mut off = 0;
+        x[off..off + 16usize] |= self.port.to_bitvec();
+        off += 16usize;
+        x[off..off + 16usize] |= self.nat_id.to_bitvec();
+        off += 16usize;
+        x
+    }
+    fn dump(&self) -> String {
+        format!(
+            "{}: {}\n{}: {}\n{}: {}\n{}: {}",
+            "port".blue(),
+            p4rs::dump_bv(&self.port),
+            "nat".blue(),
+            self.nat,
+            "nat_id".blue(),
+            p4rs::dump_bv(&self.nat_id),
+            "drop".blue(),
+            self.drop
+        )
+    }
+}
+#[derive(Debug, Default, Clone)]
+pub struct egress_metadata_t {
+    pub port: BitVec<u8, Msb0>,
+    pub nexthop_v6: BitVec<u8, Msb0>,
+    pub nexthop_v4: BitVec<u8, Msb0>,
+    pub drop: bool,
+    pub broadcast: bool,
+}
+impl egress_metadata_t {
+    fn valid_header_size(&self) -> usize {
+        let mut x: usize = 0;
+        x += 16usize;
+        x += 128usize;
+        x += 32usize;
+        x
+    }
+    fn to_bitvec(&self) -> BitVec<u8, Msb0> {
+        let mut x = bitvec![u8, Msb0; 0; self.valid_header_size()];
+        let mut off = 0;
+        x[off..off + 16usize] |= self.port.to_bitvec();
+        off += 16usize;
+        x[off..off + 128usize] |= self.nexthop_v6.to_bitvec();
+        off += 128usize;
+        x[off..off + 32usize] |= self.nexthop_v4.to_bitvec();
+        off += 32usize;
+        x
+    }
+    fn dump(&self) -> String {
+        format!(
+            "{}: {}\n{}: {}\n{}: {}\n{}: {}\n{}: {}",
+            "port".blue(),
+            p4rs::dump_bv(&self.port),
+            "nexthop_v6".blue(),
+            p4rs::dump_bv(&self.nexthop_v6),
+            "nexthop_v4".blue(),
+            p4rs::dump_bv(&self.nexthop_v4),
+            "drop".blue(),
+            self.drop,
+            "broadcast".blue(),
+            self.broadcast
+        )
+    }
 }
 pub fn parse_start(
     pkt: &mut packet_in,
@@ -856,62 +841,6 @@ pub fn parse_start(
     pkt.extract(&mut hdr.ethernet);
     pkt.extract(&mut hdr.ipv4);
     return true;
-}
-pub fn ingress_ipv4_lpm() -> p4rs::table::Table<
-    1usize,
-    std::sync::Arc<dyn Fn(&mut headers_t, &mut ingress_metadata_t, &mut egress_metadata_t)>,
-> {
-    let mut ipv4_lpm_table: p4rs::table::Table<
-        1usize,
-        std::sync::Arc<dyn Fn(&mut headers_t, &mut ingress_metadata_t, &mut egress_metadata_t)>,
-    > = p4rs::table::Table::<
-        1usize,
-        std::sync::Arc<dyn Fn(&mut headers_t, &mut ingress_metadata_t, &mut egress_metadata_t)>,
-    >::new();
-    ipv4_lpm_table
-}
-pub fn ingress_action_forward(
-    hdr: &mut headers_t,
-    ingress: &mut ingress_metadata_t,
-    egress: &mut egress_metadata_t,
-    port: BitVec<u8, Msb0>,
-    dmac: BitVec<u8, Msb0>,
-) {
-    let dump = format!("port={}, dmac={}", port, dmac,);
-    softnpu_provider::action!(|| (&dump));
-    hdr.ipv4.ttl = p4rs::bitmath::sub_le(
-        hdr.ipv4.ttl.clone(),
-        {
-            let mut x = bitvec![mut u8, Msb0; 0; 8usize];
-            x.store_le(1u128);
-            x
-        }
-        .clone(),
-    )
-    .clone();
-    hdr.ethernet.dst = dmac.clone();
-    hdr.ipv4.hdr_checksum = {
-        let mut x = bitvec![mut u8, Msb0; 0; 16usize];
-        x.store_le(0u128);
-        x
-    }
-    .clone();
-    egress.port = port.to_owned().clone();
-}
-pub fn ingress_action_punt(
-    hdr: &mut headers_t,
-    ingress: &mut ingress_metadata_t,
-    egress: &mut egress_metadata_t,
-) {
-    let dump = format!("",);
-    softnpu_provider::action!(|| (&dump));
-    egress.port = {
-        let mut x = bitvec![mut u8, Msb0; 0; 16usize];
-        x.store_le(65535u128);
-        x
-    }
-    .to_owned()
-    .clone();
 }
 pub fn ingress_apply(
     hdr: &mut headers_t,
@@ -944,6 +873,77 @@ pub fn ingress_apply(
             ingress_action_drop(hdr, ingress, egress);
         }
     }
+}
+pub fn ingress_ipv4_lpm() -> p4rs::table::Table<
+    1usize,
+    std::sync::Arc<dyn Fn(&mut headers_t, &mut ingress_metadata_t, &mut egress_metadata_t)>,
+> {
+    let mut ipv4_lpm_table: p4rs::table::Table<
+        1usize,
+        std::sync::Arc<dyn Fn(&mut headers_t, &mut ingress_metadata_t, &mut egress_metadata_t)>,
+    > = p4rs::table::Table::<
+        1usize,
+        std::sync::Arc<dyn Fn(&mut headers_t, &mut ingress_metadata_t, &mut egress_metadata_t)>,
+    >::new();
+    ipv4_lpm_table
+}
+pub fn egress_apply(
+    hdr: &mut headers_t,
+    ingress: &mut ingress_metadata_t,
+    egress: &mut egress_metadata_t,
+) {
+}
+pub fn ingress_action_punt(
+    hdr: &mut headers_t,
+    ingress: &mut ingress_metadata_t,
+    egress: &mut egress_metadata_t,
+) {
+    let dump = format!("",);
+    softnpu_provider::action!(|| (&dump));
+    egress.port = {
+        let mut x = bitvec![mut u8, Msb0; 0; 16usize];
+        x.store_le(65535u128);
+        x
+    }
+    .to_owned()
+    .clone();
+}
+pub fn ingress_action_forward(
+    hdr: &mut headers_t,
+    ingress: &mut ingress_metadata_t,
+    egress: &mut egress_metadata_t,
+    port: BitVec<u8, Msb0>,
+    dmac: BitVec<u8, Msb0>,
+) {
+    let dump = format!("port={}, dmac={}", port, dmac,);
+    softnpu_provider::action!(|| (&dump));
+    hdr.ipv4.ttl = p4rs::bitmath::sub_le(
+        hdr.ipv4.ttl.clone(),
+        {
+            let mut x = bitvec![mut u8, Msb0; 0; 8usize];
+            x.store_le(1u128);
+            x
+        }
+        .clone(),
+    )
+    .clone();
+    hdr.ethernet.dst = dmac.clone();
+    hdr.ipv4.hdr_checksum = {
+        let mut x = bitvec![mut u8, Msb0; 0; 16usize];
+        x.store_le(0u128);
+        x
+    }
+    .clone();
+    egress.port = port.to_owned().clone();
+}
+pub fn ingress_action_drop(
+    hdr: &mut headers_t,
+    ingress: &mut ingress_metadata_t,
+    egress: &mut egress_metadata_t,
+) {
+    let dump = format!("",);
+    softnpu_provider::action!(|| (&dump));
+    egress.drop = true;
 }
 pub struct main_pipeline {
     pub ingress_ipv4_lpm: p4rs::table::Table<

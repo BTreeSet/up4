@@ -1,0 +1,13 @@
+[package]
+name = "xtask"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+# up4's generation toolchain. Not part of the switch: it provisions the two P4
+# compilers in userspace and keeps the committed artifacts in step with their
+# `.p4` sources. See src/main.rs for the model.
+
+[dependencies]
+up4-engine = { path = "../crates/up4-engine" }
