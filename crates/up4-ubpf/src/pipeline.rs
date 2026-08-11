@@ -104,7 +104,7 @@ const L3FWD: Desc = Desc {
     tables: &[TableAbi {
         name: "ipv4_lpm",
         matching: Match::Lpm,
-        // key `{ uint32_t prefix_len0; uint32_t hdr_ipv4_dst; }` — the program
+        // key `{ uint32_t prefix_len0; uint32_t hdr_ipv4_dst; }`: the program
         // zeroes the length and the host matches on the address, so the match
         // window is the second word. The value's union aligns to 8 because it
         // holds a uint64 dmac, so parameters start at 8 and dmac at 16.
@@ -211,7 +211,7 @@ impl UbpfPipeline {
     fn with_mode(desc: &'static Desc, mode: ExecMode) -> Self {
         let program = elf::load(desc.object)
             .unwrap_or_else(|e| panic!("{}: committed object does not load: {e}", desc.name));
-        // One `Table` per map the program refers to, in index order — the
+        // One `Table` per map the program refers to, in index order, the
         // order the loader baked into the instruction stream.
         let tables: Vec<Table> = program
             .maps
@@ -255,8 +255,8 @@ impl UbpfPipeline {
 
     /// A program by name, in a named execution mode.
     ///
-    /// The mode is not part of `Selection` — it is a property of how the
-    /// bytecode runs, not of which program is loaded — so this is how the
+    /// The mode is not part of `Selection`: it is a property of how the
+    /// bytecode runs, not of which program is loaded, so this is how the
     /// conformance corpus reaches every mode a target has. Production goes
     /// through [`UbpfPipeline::l2fwd`] and [`UbpfPipeline::l3fwd`], which take
     /// [`ExecMode::preferred`].
@@ -518,7 +518,7 @@ impl Engine for UbpfEngine {
                 // The frame's length is invariant: `ubpf_adjust_head` with a
                 // non-zero delta is refused, so the deparser rewrites headers
                 // in place and cannot resize. `std_meta.packet_length` is *not*
-                // that length — p4c adds the deparsed header size to it — so
+                // that length: p4c adds the deparsed header size to it, so
                 // trusting it would grow every frame by its own header and
                 // make a tight buffer look too small.
                 let len = f.len();

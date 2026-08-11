@@ -1,11 +1,11 @@
-//! `up4d` — one up4 node (spec S2, S12, S15).
+//! `up4d`: one up4 node (spec S2, S12, S15).
 //!
 //! This binary is wiring and lifecycle, nothing else. It has no forwarding
 //! logic (spec S1.3), no protocol of its own, and no policy that is not either
 //! in the configuration or in the loaded pipeline. What it does own is the
 //! order things happen in:
 //!
-//! 1. block terminating signals — **before any thread exists**, so none can be
+//! 1. block terminating signals **before any thread exists**, so none can be
 //!    killed out from under a final snapshot;
 //! 2. probe the host and log the banner (spec S11.1);
 //! 3. load and validate the configuration, reporting *every* violation (S5);
@@ -44,7 +44,7 @@ struct Cli {
     /// Which backend executes the configured pipeline.
     ///
     /// Omitted means `native`. The three are interchangeable: same `.p4`, same
-    /// tables, same `up4ctl` calls — they differ in provenance and cost, which
+    /// tables, same `up4ctl` calls; they differ in provenance and cost, which
     /// `up4ctl info` reports rather than this help text claiming.
     #[arg(long, value_parser = ["native", "x4c", "ubpf"])]
     backend: Option<String>,
@@ -304,7 +304,7 @@ fn serve(
     for (id, shard) in shards.into_iter().enumerate() {
         if shard.join().is_err() {
             // Release builds abort on a panicking thread (spec S12), so this
-            // is reachable only in a debug build — where saying so beats a
+            // is reachable only in a debug build, where saying so beats a
             // silent half-alive switch just as much.
             error!(shard = id, "shard thread panicked");
         }

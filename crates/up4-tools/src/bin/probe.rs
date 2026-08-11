@@ -1,4 +1,4 @@
-//! `probe` — what this host will let up4 do (spec S11.1).
+//! `probe`: what this host will let up4 do (spec S11.1).
 //!
 //! Prints one JSON object and exits. `up4d` runs the same probe at startup and
 //! logs it as its banner, so a result attached to an experiment and a result

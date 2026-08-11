@@ -1,4 +1,4 @@
-//! The null oracle (spec S7.4) — **benchmarks only**.
+//! The null oracle (spec S7.4): **benchmarks only**.
 //!
 //! Feature-gated behind `oracle` and excluded from default builds, because it
 //! is the one component allowed to decide an output port without a P4 program
@@ -7,7 +7,7 @@
 //! I/O path alone.
 //!
 //! The map is static, built once from the topology: egress is the next vport in
-//! configuration order, cyclically — which for the two-port topology the
+//! configuration order, cyclically, which for the two-port topology the
 //! acceptance criteria use is exactly `Forward(1 - ingress)`.
 //!
 //! Cost: one array read per frame.

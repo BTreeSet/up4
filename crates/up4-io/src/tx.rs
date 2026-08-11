@@ -2,7 +2,7 @@
 //!
 //! Each destination vport owns one preallocated, contiguous buffer. Staging a
 //! frame appends `[overlay header][inner frame]` to it, which is exactly the
-//! layout `UDP_SEGMENT` wants — so a batch of same-size frames leaves as one
+//! layout `UDP_SEGMENT` wants, so a batch of same-size frames leaves as one
 //! syscall, and the memory it leaves from is the memory it was staged into. No
 //! second copy, no allocation after startup, and a bounded queue by
 //! construction: staging past [`crate::socket::TX_BATCH`] segments is
@@ -14,8 +14,8 @@ use up4_wire::OVERLAY_HDR_LEN;
 /// One GSO-compatible span of a staging buffer.
 ///
 /// A span is a maximal run of equal-length segments, optionally ending in one
-/// shorter segment — precisely what the kernel accepts as a single segmented
-/// datagram.
+/// shorter segment, which is precisely what the kernel accepts as a single
+/// segmented datagram.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Run {
     /// Byte offset of the run within the staging buffer.
@@ -89,7 +89,7 @@ impl TxQueue {
 
     /// Append one segment.
     ///
-    /// Returns `false` — without staging anything — when the queue is full or
+    /// Returns `false`, without staging anything, when the queue is full or
     /// the frame exceeds the fabric's inner MTU. Both are the caller's cue to flush or
     /// to count a drop; neither can corrupt the buffer.
     ///
@@ -122,8 +122,8 @@ impl TxQueue {
     ///
     /// A span is bounded twice: by `max_segments`, which the kernel reports,
     /// and by [`GSO_MAX_BYTES`], which is what a single segmented write can
-    /// carry at all. At full MTU the byte bound binds first — 64 segments of
-    /// 1472 B is 94 KiB, and a write that large fails — so leaving it out
+    /// carry at all. At full MTU the byte bound binds first: 64 segments of
+    /// 1472 B is 94 KiB, and a write that large fails. Leaving it out
     /// would silently lose whole batches.
     ///
     /// Cost: O(segments), no allocation.

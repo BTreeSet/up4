@@ -4,7 +4,7 @@ name: p4-artifacts
 # the real compilers and compare bytes. That catches a hand-edited artifact,
 # which the hash-based `audit` in ci.yml cannot.
 #
-# Its own workflow because it builds p4c from source — 691 targets, tens of
+# Its own workflow because it builds p4c from source: 691 targets, tens of
 # minutes on a cold cache. That does not belong on a pull-request path: it
 # would not finish, and `cancel-in-progress` would kill it on the next push.
 # Here it runs weekly and on demand, with a warm cache and no cancellation.

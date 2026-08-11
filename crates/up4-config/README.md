@@ -4,7 +4,7 @@
 
 Parse, don't validate: a wide serde mirror accepts anything TOML-shaped, and one
 smart constructor refines it into `Config`, collecting **every** violation
-rather than stopping at the first — an operator fixing a config file wants the
+rather than stopping at the first: an operator fixing a config file wants the
 whole list. Past that boundary `VportId`, `Threads`, and the peer-to-vport demux
 map are correct by construction.
 

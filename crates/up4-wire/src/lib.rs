@@ -55,7 +55,7 @@ pub const fn segment_len(inner_len: usize) -> usize {
 /// so they are constants of the codec and illegal ones die in [`decode`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct Hdr {
-    /// Sender-side vport id. Tracing only — the receiver derives ingress from
+    /// Sender-side vport id. Tracing only; the receiver derives ingress from
     /// the source tuple (spec S6.2), never from this field.
     pub ingress_vport: u16,
     /// Per-(sender, vport) counter, monotonically increasing modulo 2^32.

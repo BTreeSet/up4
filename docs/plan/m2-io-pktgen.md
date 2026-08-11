@@ -1,7 +1,7 @@
-# M2 — up4-io + NullEngine + pktgen
+# M2: up4-io + NullEngine + pktgen
 
 Spec: S6 (I/O), S7.1/S7.4 (engine trait, oracle), S11.2 (pktgen).
-Done-when: A1 achievable on loopback — ≥ 812 kpps at 1460 B, 60 s, zero
+Done-when: A1 achievable on loopback: ≥ 812 kpps at 1460 B, 60 s, zero
 harness drops; record the number (S15 M2).
 
 ## up4-engine (trait only, no x4c yet)
@@ -11,7 +11,7 @@ harness drops; record the number (S15 M2).
 - [ ] `NullEngine` behind `--features oracle`, excluded from default builds:
       `Forward(1 - ingress)` for two-port configs, config-selected static map
       otherwise (S7.4).
-- [ ] `mod fallback_ubpf;` — skeleton + doc comment only (S7.5).
+- [ ] `mod fallback_ubpf;`: skeleton + doc comment only (S7.5).
 
 ## up4-io
 
@@ -23,7 +23,7 @@ harness drops; record the number (S15 M2).
       one `UdpSocketState` per socket; log `gro/gso/max_gso_segments` once.
 - [ ] Rx loop (S6.2): arena of 64 slots allocated once, each sized
       `max_udp_payload_size() * gro_segments()` from quinn-udp (~92 KiB on
-      Linux) — not a hardcoded 64 KiB; batched recv; GRO
+      Linux), not a hardcoded 64 KiB; batched recv; GRO
       stride iteration; demux via the config-built `HashMap`; decode; seq
       accounting (per-vport `expected_seq`, gap accumulate, reorder window
       1024, record-only); engine invoke; oversize check.
@@ -41,7 +41,7 @@ harness drops; record the number (S15 M2).
       (vary inner src/dst), `--duration`, target node address.
 - [ ] Receiver side: seq checking per sender vport; loss from seq gaps.
 - [ ] Report: achieved pps/Gbps, loss, p50/p99 one-way latency from `ts_us`.
-      Latency histogram = sorted `Vec<i64>` of samples, percentiles by index —
+      Latency histogram = sorted `Vec<i64>` of samples, percentiles by index;
       no hdrhistogram dep. Cross-host runs labeled "uncalibrated clock delta".
 
 ## benches (crate `benches`)

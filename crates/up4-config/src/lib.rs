@@ -4,7 +4,7 @@
 //! enter up4 (the first is [`up4_wire::decode`]). It follows *parse, don't
 //! validate*: [`Config::from_toml`] is the only constructor, it collects
 //! **every** violation rather than the first (spec S5), and what it returns is
-//! a value in which the violations it checks for are unrepresentable —
+//! a value in which the violations it checks for are unrepresentable;
 //! [`VportId`] cannot hold the reserved punt id, [`Threads`] cannot hold 0 or
 //! 17, [`VportTable`] cannot hold a duplicate id or a duplicate peer tuple.
 //!

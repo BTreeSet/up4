@@ -20,7 +20,7 @@
 //!   `Broadcast`, egress port [`up4_wire::PUNT_VPORT`] → `Punt`, otherwise
 //!   `Forward(port)`.
 //! * Inner checksum zero-fill after any run that may have modified a header
-//!   ([`crate::headers::zero_inner_checksums`]) — the harness's only
+//!   ([`crate::headers::zero_inner_checksums`]), the harness's only
 //!   inner-packet touch (spec S1.5).
 //!
 //! ## The endianness contradiction

@@ -2,7 +2,7 @@
 //!
 //! This is the proof the MVP exists to produce: a P4 program's semantics,
 //! executed by an unprivileged userspace process, forwarding real Ethernet
-//! frames between two switches over plain UDP — in both directions at once,
+//! frames between two switches over plain UDP, in both directions at once,
 //! with every lost frame attributable.
 //!
 //! ```text
@@ -159,8 +159,8 @@ fn two_routers_carry_two_generators_in_both_directions() {
             "{label}: frames changed length in transit"
         );
         // Delivery is generous on purpose: a shared CI box can drop frames in
-        // a kernel queue, and that is not up4's fault. What is up4's fault —
-        // and is checked strictly below — is failing to *say* so.
+        // a kernel queue, and that is not up4's fault. What is up4's fault,
+        // and is checked strictly below, is failing to *say* so.
         assert!(
             report.received >= report.sent * 95 / 100,
             "{label}: {} of {} frames came back ({:.2}% loss)\n  a: {:?}\n  b: {:?}",
@@ -200,7 +200,7 @@ fn two_routers_carry_two_generators_in_both_directions() {
 
     // Spec A5, rehearsed: whatever went missing is *attributable*. Each frame
     // lost in a kernel queue shows up as a sequence gap at the hop that lost
-    // it — at a node for the fabric hops, at the generator for the last one —
+    // it (at a node for the fabric hops, at the generator for the last one),
     // so the accounting closes to within the frames still in flight when the
     // generators stopped.
     let gaps_at = |node: &Node| {
@@ -240,7 +240,7 @@ fn one_frame_crosses_both_routers_with_the_pipeline_s_edits_applied() {
 /// The conformance corpus already holds all three backends to the same
 /// verdicts and bytes, but it calls `Engine::process` directly. This is the
 /// rest of the claim: a backend is interchangeable only if the whole datapath
-/// — config, control channel, shard threads, sockets, GRO/GSO — works with it,
+/// (config, control channel, shard threads, sockets, GRO/GSO) works with it,
 /// and that is not something a corpus can show.
 #[test]
 fn every_backend_forwards_across_both_routers() {

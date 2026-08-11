@@ -1,7 +1,7 @@
 //! The one clock up4 reads.
 //!
-//! Overlay timestamps must be comparable *between processes* on a host — a
-//! pktgen receiver subtracts the timestamp a switch stamped — so this is raw
+//! Overlay timestamps must be comparable *between processes* on a host, where
+//! a pktgen receiver subtracts the timestamp a switch stamped, so this is raw
 //! `CLOCK_MONOTONIC` and not `Instant`, whose zero is per-process.
 //!
 //! Cost: one vDSO call, no syscall on any supported platform. The datapath

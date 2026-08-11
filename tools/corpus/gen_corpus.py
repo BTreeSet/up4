@@ -32,7 +32,7 @@ ETHERTYPE_ARP = 0x0806
 IP_PROTO_UDP = 17
 
 # Fields masked on both sides before diffing (spec S10). Nothing else is
-# masked, and this list is duplicated — deliberately, in one place each — in
+# masked, and this list is duplicated (deliberately, in one place each) in
 # conformance.rs. Keep them adjacent: p4/corpus/README.md documents the pair.
 MASK_IPV4_CHECKSUM = True
 MASK_L4_CHECKSUM = True

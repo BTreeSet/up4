@@ -5,7 +5,7 @@
 //! up4 publishes table state with copy-on-write RCU: one writer swaps an
 //! `Arc`, and every shard reads lock-free. x4c's `main_pipeline` takes
 //! `&mut self` for *both* `process_packet` and `add_table_entry`, so it cannot
-//! sit behind a shared snapshot at all — there is no immutable view of it to
+//! sit behind a shared snapshot at all; there is no immutable view of it to
 //! publish.
 //!
 //! # The reconciliation
@@ -25,7 +25,7 @@
 //!
 //! # Cost
 //!
-//! Steady state is one `Acquire` load and an integer compare per frame — the
+//! Steady state is one `Acquire` load and an integer compare per frame, the
 //! same as [`up4_engine::table::Cached`], which this deliberately mirrors. The
 //! first frame after a control-plane write replays the *k* new operations,
 //! O(k). A compaction rewrites the log to one operation per live entry and
@@ -62,7 +62,7 @@ const BROADCAST_PORT: u16 = 65534;
 struct Desc {
     /// The selection name this pipeline reports.
     name: &'static str,
-    /// The control-plane surface — reused verbatim from the `native` backend,
+    /// The control-plane surface, reused verbatim from the `native` backend,
     /// because both are the same tables of the same `.p4`. That reuse is what
     /// makes the two backends interchangeable rather than merely parallel.
     schemas: &'static [TableSchema],
@@ -76,7 +76,7 @@ struct Desc {
     /// P4 says a parser that runs out of bytes rejects the packet. p4rs does
     /// not implement that: `packet_in::extract` slices unconditionally and
     /// **panics** on a short frame (`lang/p4rs/src/lib.rs`). up4 runs with
-    /// `panic = "abort"`, so the panic cannot be caught — a 13-byte frame
+    /// `panic = "abort"`, so the panic cannot be caught; a 13-byte frame
     /// would take the switch down. Refusing the frame here restores the
     /// semantics the source of record already specifies.
     min_parse: usize,
@@ -210,14 +210,14 @@ impl X4cPipeline {
         // SoftNPU expresses broadcast as `egress.broadcast = true`, and x4c
         // expands that into one output per port other than the ingress one.
         // With a radix that exactly covers the vports, a two-port node's
-        // broadcast produces a single output — indistinguishable from a
+        // broadcast produces a single output, indistinguishable from a
         // forward, which would silently mis-attribute every flooded frame to
         // `tx_pkts` instead of `tx_broadcast`.
         //
         // Two spare ports make the two cases structurally distinct: a forward
         // is always exactly one output, a broadcast always at least two. up4's
         // harness resolves `Verdict::Broadcast` against the real topology
-        // itself, so the spare ports are never transmitted on — they exist
+        // itself, so the spare ports are never transmitted on; they exist
         // only so the verdict can be read off unambiguously.
         let highest = params.vports.iter().copied().max().unwrap_or(0);
         Self {
@@ -464,7 +464,7 @@ fn apply(desc: &Desc, pipe: &mut dyn p4rs::Pipeline, op: &Op) {
             // already has one leaves both installed and the older one can win
             // the lookup. up4's `table_add` means install-or-replace, so the
             // removal is what makes replay last-writer-wins and therefore
-            // idempotent — which the fold depends on.
+            // idempotent, which the fold depends on.
             let k = encode_key(*key);
             pipe.remove_table_entry(desc.id(table), k.as_slice());
             pipe.add_table_entry(
@@ -501,7 +501,7 @@ impl X4cEngine {
         }
         // `packet_out` borrows the input, so the result cannot be written back
         // over the bytes it points at. Two reused buffers, no per-frame
-        // allocation *here* — x4c's runtime allocates internally regardless.
+        // allocation *here*; x4c's runtime allocates internally regardless.
         self.scratch_in.clear();
         self.scratch_in.extend_from_slice(f.frame());
 
@@ -536,7 +536,7 @@ impl X4cEngine {
         // The frame's length is invariant: these programs deparse exactly the
         // headers they parsed. `packet_out` reports header bytes and payload
         // separately and the two do not always sum to the input length, so the
-        // input length is the authority — trusting the sum made a frame in a
+        // input length is the authority; trusting the sum made a frame in a
         // tight buffer look too long and turned every hit into a drop.
         let len = f.len().min(self.scratch_out.len());
         f.frame_mut()[..len].copy_from_slice(&self.scratch_out[..len]);

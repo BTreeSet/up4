@@ -3,7 +3,7 @@
 //! The corpus in `p4/corpus/<program>/` is produced by an independent model of
 //! the P4 source (`tools/corpus/gen_corpus.py`, and in due course the BMv2
 //! differential runner of spec S10). This test replays it through the real
-//! `Engine` — no sockets, no harness — and diffs verdict and frame bytes.
+//! `Engine` (no sockets, no harness) and diffs verdict and frame bytes.
 //!
 //! Masking: before diffing frames, the IPv4 header checksum and the TCP/UDP
 //! checksums are zeroed on **both** sides, and nothing else is. up4 never
@@ -76,7 +76,7 @@ fn hex_to_bytes(hex: &str) -> Vec<u8> {
 }
 
 /// Install the corpus's control-plane state, refining each value against the
-/// table's own schema — the same gate the control channel uses.
+/// table's own schema, the same gate the control channel uses.
 fn load_tables(pipeline: &dyn Pipeline, entries: &[Entry]) {
     for entry in entries {
         let schema = pipeline
@@ -174,7 +174,7 @@ fn conform(program: &str) {
 
     // Every backend, on the same corpus. That all three produce identical
     // output on identical input is what makes "the same program" a checkable
-    // claim rather than a naming convention — the three share no code and, in
+    // claim rather than a naming convention: the three share no code and, in
     // the uBPF case, not even a language.
     for runner in runners(Program::parse(program).expect("known program")) {
         check_runner(program, &runner, &batch, &cases);
@@ -207,7 +207,7 @@ fn runners(program: Program) -> Vec<Runner> {
                     label: format!("{} ({})", backend.name(), mode.name()),
                     build: Box::new(move |_params| {
                         // Built directly rather than through `up4_catalog::build`,
-                        // which takes a `Selection` and has no mode axis — so the
+                        // which takes a `Selection` and has no mode axis, so the
                         // envelope has to be applied here, exactly as `build` does.
                         program.envelope().wrap(Box::new(
                             up4_ubpf::pipeline::UbpfPipeline::in_mode(program, mode),
@@ -288,8 +288,8 @@ fn l3fwd_matches_its_corpus() {
 /// refuses.
 ///
 /// The corpus already covers three such frames, but only the ones someone
-/// thought to write down. This walks the whole domain the check inspects —
-/// all 256 values of the IPv4 version/IHL byte — against all three backends,
+/// thought to write down. This walks the whole domain the check inspects
+/// (all 256 values of the IPv4 version/IHL byte) against all three backends,
 /// so a backend that quietly stopped applying admission (or a `build` that
 /// forgot to wrap one) fails here rather than waiting for a corpus case to be
 /// added. It is the pointwise statement of `up4(p) = admit(p) ; p4(p)`.

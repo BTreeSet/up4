@@ -1,4 +1,4 @@
-//! `up4ctl` — the operator's side of the control channel (spec S8.2).
+//! `up4ctl`: the operator's side of the control channel (spec S8.2).
 //!
 //! A thin 1:1 mapping onto the protocol: every subcommand is one request, and
 //! `--json` prints the reply verbatim so scripts never parse the human output.
@@ -262,7 +262,7 @@ fn params_of(entry: &up4_engine::EntryDesc) -> String {
 fn print_info(info: &up4_ctl::Info) {
     println!("node       {}", info.node);
     println!("version    up4 {}", info.version);
-    println!("pipeline   {} — {}", info.pipeline, info.pipeline_summary);
+    println!("pipeline   {}: {}", info.pipeline, info.pipeline_summary);
     println!("uptime     {} s", info.uptime_s);
     println!(
         "bind       {} ({} shard{})",

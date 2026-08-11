@@ -8,8 +8,8 @@
 //! path pays one relaxed atomic load per lookup and never takes a lock, while
 //! the control plane never mutates a structure a packet might be reading.
 //!
-//! Consistency model (spec S7.3): a control operation is atomic — a packet
-//! sees the table entirely before or entirely after it — and a *batch* of
+//! Consistency model (spec S7.3): a control operation is atomic, so a packet
+//! sees the table entirely before or entirely after it, and a *batch* of
 //! operations is not, since each publishes separately. Visibility is bounded by
 //! one lookup, comfortably inside A4's 100 ms.
 
@@ -66,8 +66,8 @@ impl<T> Shared<T> {
     }
 
     /// A poisoned table lock means a control operation panicked mid-update.
-    /// The value is still a fully constructed `Arc<T>` — the update either
-    /// completed or never stored — so recovering is sound and beats taking the
+    /// The value is still a fully constructed `Arc<T>` (the update either
+    /// completed or never stored), so recovering is sound and beats taking the
     /// datapath down.
     fn lock(&self) -> std::sync::MutexGuard<'_, Arc<T>> {
         self.current.lock().unwrap_or_else(|e| e.into_inner())
@@ -247,7 +247,7 @@ const fn mask_of(len: u8) -> u32 {
 /// A longest-prefix-match table (P4 `key = { x: lpm; }`).
 ///
 /// Entries are grouped by prefix length, longest first, so a lookup is one
-/// hashed probe per *distinct populated length* — at most 33, and in practice
+/// hashed probe per *distinct populated length*: at most 33, and in practice
 /// the handful of lengths a routing table actually uses (a 1 000-route table of
 /// /24s and /32s probes twice). That beats a 32-step trie walk on the access
 /// pattern up4 has: a small, static route set read at line rate.

@@ -2,7 +2,7 @@
 //!
 //! One shard owns one socket, one engine instance, and every buffer it will
 //! ever use. A frame is received, processed, and sent on the same thread and
-//! is copied exactly once — from the receive arena into its destination's
+//! is copied exactly once, from the receive arena into its destination's
 //! staging buffer, which is also the buffer it is sent from.
 //!
 //! ## The headroom invariant
@@ -10,7 +10,7 @@
 //! A GRO read lands many segments back to back in one slot, so a segment's
 //! "space in front of it" is whatever precedes it in that slot. The arena
 //! reserves [`HEADROOM`] bytes before the first segment, and segments are
-//! processed front to back — each is copied out to staging before the next is
+//! processed front to back; each is copied out to staging before the next is
 //! touched. So when segment *k* is handed to the pipeline, everything before it
 //! is dead space it may write into, and the guarantee spec S7.1 asks for
 //! (at least 64 bytes) holds for every segment, not just the first, with no
@@ -21,7 +21,7 @@
 //! Per read: one `recvmmsg`. Per segment: one O(1) header decode, one O(1)
 //! demux (done once per read, not per segment), one engine call, one copy into
 //! staging. Per batch: one `sendmsg` per destination per GSO run. No allocation
-//! anywhere in the loop — the arena, the staging buffers, and the per-vport
+//! anywhere in the loop: the arena, the staging buffers, and the per-vport
 //! state are all sized once at startup.
 
 use crate::{

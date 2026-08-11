@@ -4,7 +4,7 @@
 //! not regress. This one exists to answer a different question: what does
 //! choosing a *compiled* backend cost? It runs every `Program × Backend` pair
 //! `up4_catalog::build` admits, over one shared [`Ring`], so the ratios
-//! between the three columns are the measurement — the absolute figures are
+//! between the three columns are the measurement; the absolute figures are
 //! only as portable as the machine.
 //!
 //! `native` is measured here as well as in `engine_only`, on purpose: it is
@@ -12,7 +12,7 @@
 //! harnesses is what shows the harnesses agree.
 //!
 //! What the numbers include is `Engine::process` and its admission check, and
-//! nothing else — no sockets, no shard loop. See `benches/RESULTS.md`.
+//! nothing else: no sockets, no shard loop. See `benches/RESULTS.md`.
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
@@ -26,8 +26,8 @@ use benches::loopback::{Ring, install_fdb, install_routes};
 struct Case {
     program: Program,
     label: &'static str,
-    /// Installed identically on every backend — the tables are the program's,
-    /// not the backend's.
+    /// Installed identically on every backend, since the tables are the
+    /// program's, not the backend's.
     install: fn(&dyn up4_engine::Pipeline),
     flows: u32,
 }

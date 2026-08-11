@@ -2,20 +2,20 @@
 //!
 //! `p4c-ubpf` declares each P4 table as a C global (`struct ubpf_map_def
 //! pipe_mac_dst = {...}`) and calls `ubpf_map_lookup(&pipe_mac_dst, &key)`, so
-//! the compiled object does not contain table *addresses* — it contains
+//! the compiled object does not contain table *addresses*; it contains
 //! relocations against `.data` symbols. Something has to resolve them, and
 //! that something is this module.
 //!
 //! The resolution up4 chooses: rewrite each map reference to the map's
 //! **index**, so the running program passes a small integer to the host
-//! instead of a pointer. That is what keeps table state on the Rust side —
+//! instead of a pointer. That is what keeps table state on the Rust side:
 //! the VM never holds a table address, and the helper receives a value it can
 //! check against a closed set rather than dereference.
 //!
 //! Parse, don't validate: a [`Program`] exists only if the object was a BPF
 //! ELF64 whose relocations were all understood. Every rejection is a named
-//! [`ElfError`], because the alternative — executing a half-relocated
-//! program — is a VM that reads whatever integer happened to be in the
+//! [`ElfError`], because the alternative, executing a half-relocated
+//! program, is a VM that reads whatever integer happened to be in the
 //! instruction stream.
 //!
 //! Cost: one linear pass over the section headers, one over the symbol table,

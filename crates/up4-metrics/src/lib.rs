@@ -6,7 +6,7 @@
 //!
 //! The registry is flat and named by closed enums rather than strings, so a
 //! counter that exists cannot be misspelled at a bump site and a counter that
-//! is added cannot be forgotten in the snapshot — [`Counter::ALL`] drives both.
+//! is added cannot be forgotten in the snapshot; [`Counter::ALL`] drives both.
 //!
 //! Memory ordering: hot-path bumps are `Relaxed` (a counter is a tally, not a
 //! synchronization edge) and snapshot reads are `SeqCst`. A snapshot is
@@ -50,7 +50,7 @@ pub enum Counter {
     /// increments a *named* counter (S1.6) outranks leaving it unattributed.
     /// Recorded in `docs/deviations.md`.
     TxUnknownPort,
-    /// A send failed for a reason other than "would block" — a peer address
+    /// A send failed for a reason other than "would block": a peer address
     /// that cannot be reached, a datagram the path refuses. Extension counter,
     /// same reasoning as `TxUnknownPort`.
     TxSendError,
@@ -78,7 +78,7 @@ impl Counter {
         Self::SyscallsTx,
     ];
 
-    /// The harness's own discards — everything up4 threw away that the
+    /// The harness's own discards: everything up4 threw away that the
     /// pipeline did not ask it to. "Zero harness drops" (A1, A2) means the sum
     /// of exactly these.
     pub const HARNESS_DROPS: [Self; 8] = [
@@ -184,7 +184,7 @@ impl Hist {
 
 /// Power-of-two histogram over `1,2,4,8,16,32,64`, plus an overflow bucket.
 ///
-/// Cost: O(1) — one `leading_zeros` and one relaxed fetch-add.
+/// Cost: O(1), one `leading_zeros` and one relaxed fetch-add.
 #[derive(Debug, Default)]
 pub struct Histogram {
     buckets: [AtomicU64; Histogram::BUCKETS],
@@ -297,7 +297,7 @@ impl Metrics {
         &self.hists[h as usize]
     }
 
-    /// Sum of every harness-drop counter — the quantity that must be zero in
+    /// Sum of every harness-drop counter, the quantity that must be zero in
     /// the acceptance runs (A1, A2).
     #[must_use]
     pub fn harness_drops(&self) -> u64 {

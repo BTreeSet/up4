@@ -15,7 +15,7 @@
 //! ldxdw r1, [r1 + 0]   ; ctx
 //! ```
 //!
-//! Order matters — `r1` is the mbuff until the second instruction overwrites
+//! Order matters: `r1` is the mbuff until the second instruction overwrites
 //! it. Prepending is safe because BPF jumps and calls are relative to their
 //! own position, and relocations were applied before this.
 //!
@@ -44,7 +44,7 @@
 //!
 //! The trade is real and worth stating plainly. `register_allowed_memory`,
 //! which bounds every load and store the *interpreter* makes into the VM's
-//! buffers, is an interpreter feature — rbpf's JIT ignores it and performs no
+//! buffers, is an interpreter feature. rbpf's JIT ignores it and performs no
 //! runtime memory checking at all. Under `ExecMode::Jit` the only thing
 //! keeping generated code inside its buffers is the bounds checking p4c
 //! already emits against `packet_length`, which up4 supplies. That is the
@@ -52,8 +52,8 @@
 //! instead of a dynamic check, and it is taken deliberately: see
 //! docs/deviations.md D11.
 //!
-//! Compilation happens once, in [`Vm::new`], after the helpers are registered
-//! — the JIT bakes their addresses into the emitted code, so registering one
+//! Compilation happens once, in [`Vm::new`], after the helpers are registered;
+//! the JIT bakes their addresses into the emitted code, so registering one
 //! afterwards would have no effect. rbpf emits into a single 4 KiB page and
 //! overflowing it panics, so an oversized program fails at startup rather than
 //! on a frame; `every_shipped_program_compiles_in_every_mode` is what keeps
@@ -82,7 +82,7 @@ pub mod meta {
 /// Written into `output_port` before a run so a parser rejection is
 /// distinguishable from a forward.
 ///
-/// p4c's `reject:` label returns 1 — the same value a passed frame returns —
+/// p4c's `reject:` label returns 1, the same value a passed frame returns,
 /// and it never touches `output_port`, so the return code alone cannot tell a
 /// refused parse from a forward to port 0. A value no action can produce makes
 /// the difference legible: still there afterwards means no action ran.
@@ -176,7 +176,7 @@ fn map_lookup(map: u64, key_ptr: u64, _: u64, _: u64, _: u64) -> u64 {
     })
 }
 
-/// `ubpf_adjust_head(ctx, delta)` — grow or shrink the packet's headroom.
+/// `ubpf_adjust_head(ctx, delta)`: grow or shrink the packet's headroom.
 ///
 /// p4c's deparser calls this before emitting. Both shipped programs emit
 /// exactly the headers they parsed, so the delta is zero and the packet keeps
@@ -207,7 +207,7 @@ fn mark_refused(what: &'static str) {
 ///
 /// Answering zero silently would let a program mis-forward; recording a
 /// refusal turns the frame into a drop with a reason instead. rbpf takes a
-/// bare `fn`, which cannot capture, so each refusal is its own function —
+/// bare `fn`, which cannot capture, so each refusal is its own function;
 /// the macro keeps that from becoming eight copies of the same body.
 macro_rules! refusals {
     ($($name:ident => $what:literal),* $(,)?) => {
@@ -235,7 +235,7 @@ pub struct Vm {
     /// The two pointers the prologue loads, leaked.
     ///
     /// rbpf's JIT entry point takes the metadata buffer by `&'a mut` where
-    /// `'a` is the VM's own lifetime parameter — `'static` here, because the
+    /// `'a` is the VM's own lifetime parameter, `'static` here, because the
     /// program text is leaked for the same reason. Leaking these sixteen bytes
     /// too makes `'static` a fact about the allocation rather than a lifetime
     /// laundered past the borrow checker, and it is bounded: one per shard,
@@ -248,7 +248,7 @@ pub struct Vm {
 
 // SAFETY: rbpf's VM holds a `dyn Any` for its JIT state, which is not `Send`.
 // A `Vm` is constructed by `Pipeline::engine` and moved onto exactly one shard
-// thread, where it stays for its life — up4's engines are never shared between
+// thread, where it stays for its life; up4's engines are never shared between
 // threads, which is the whole reason `Engine` takes `&mut self`. Nothing inside
 // is reachable from another thread, so moving one is sound.
 unsafe impl Send for Vm {}
@@ -329,7 +329,7 @@ impl Vm {
         text.extend_from_slice(&program.text);
         // rbpf borrows the program for the VM's lifetime. Leaking is bounded
         // and deliberate: a handful of kilobytes, once per pipeline, for the
-        // life of the process — cheaper than a self-referential struct.
+        // life of the process, which is cheaper than a self-referential struct.
         let text: &'static [u8] = Box::leak(text.into_boxed_slice());
 
         let mut vm =
@@ -378,7 +378,7 @@ impl Vm {
         };
         // Heap buffers do not move when the struct does, so these ranges are
         // stable for the VM's life and are registered once rather than per
-        // frame — an interpreter check list that grew every frame would be a
+        // frame: an interpreter check list that grew every frame would be a
         // leak with a performance tail.
         for (ptr, len) in [
             (this.packet.as_ptr() as u64, this.packet.len() as u64),
@@ -450,7 +450,7 @@ impl Vm {
                     //
                     // SAFETY: the pointer is derived from `self.mbuff`, which
                     // points into a leaked allocation that outlives the
-                    // process, so it is neither dangling nor aliased — nothing
+                    // process, so it is neither dangling nor aliased; nothing
                     // else reads or writes those sixteen bytes while the call
                     // runs, and the writes above have ended. Executing
                     // JIT-compiled code is `unsafe` because rbpf performs no
@@ -491,7 +491,7 @@ impl Vm {
         &self.packet
     }
 
-    /// How this VM executes bytecode — the mode in force, read off the VM that
+    /// How this VM executes bytecode: the mode in force, read off the VM that
     /// is running rather than off a table describing it.
     ///
     /// `up4ctl info` quotes [`ExecMode::SHIPPED`]; this is what that constant
@@ -633,8 +633,8 @@ mod key_tests {
     /// `0x0000_aabb_ccdd_eeff`, whose key image is that integer's
     /// little-endian bytes.
     ///
-    /// Two other plausible encodings — the byte-reversed integer, and the wire
-    /// bytes copied straight in — are asserted *not* to match, because a test
+    /// Two other plausible encodings, the byte-reversed integer and the wire
+    /// bytes copied straight in, are asserted *not* to match, because a test
     /// that only checked the positive case would pass under more than one
     /// convention and settle nothing.
     #[test]

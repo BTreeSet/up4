@@ -3,20 +3,20 @@
 //! up4's harness makes no forwarding decisions (spec S1.3). Everything about
 //! *where a frame goes* lives behind two small contracts:
 //!
-//! * [`Engine`] — one per shard thread, invoked per frame, returns a
+//! * [`Engine`]: one per shard thread, invoked per frame, returns a
 //!   [`Verdict`]. Frames are modified in place through a [`FrameCtx`].
-//! * [`Pipeline`] — the shared, control-plane-facing half: it owns the tables
+//! * [`Pipeline`]: the shared, control-plane-facing half: it owns the tables
 //!   and mints engines for shards.
 //!
 //! A P4 program becomes a `Pipeline` in one of two ways. The route this crate
 //! *takes* today is a direct rendering of the program's parser, control, and
-//! deparser onto the primitives in [`headers`] and [`table`] — P4 semantics in
+//! deparser onto the primitives in [`headers`] and [`table`]: P4 semantics in
 //! Rust's type system, with the `.p4` source in `p4/programs/` as the artifact
 //! of record (spec P1). The route the spec ultimately mandates is x4c-generated
 //! code plugged into the same two contracts; [`x4c`] holds that seam, including
 //! the byte-level ABI its adapter must satisfy. See `docs/deviations.md`.
 //!
-//! Cost: `Engine::process` is O(1) per frame for both compiled-in programs —
+//! Cost: `Engine::process` is O(1) per frame for both compiled-in programs:
 //! a fixed number of header loads plus one hashed table probe (l2fwd) or one
 //! probe per populated prefix length (l3fwd). No allocation, ever.
 

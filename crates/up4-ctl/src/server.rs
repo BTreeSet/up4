@@ -1,6 +1,6 @@
 //! The control server (spec S8).
 //!
-//! One thread, one connection at a time, `SOCK_SEQPACKET` at mode 0600 — the
+//! One thread, one connection at a time, `SOCK_SEQPACKET` at mode 0600; the
 //! filesystem is the authorization boundary (spec S8.1). Command handling is
 //! [`handle`], a plain function over a [`Context`], so every command is
 //! testable without a socket in sight; the socket code below it does nothing
@@ -36,7 +36,8 @@ pub const PUNT_DRAIN_MAX: usize = 64;
 /// How long a connected client may say nothing before the server hangs up.
 ///
 /// Connections are served one at a time, so an idle one is not merely
-/// impolite — it holds the whole control channel. Bound it (AGENTS.md rule 8).
+/// impolite, since it holds the whole control channel. Bound it (AGENTS.md
+/// rule 8).
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Everything the control channel is allowed to touch.

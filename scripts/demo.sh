@@ -126,4 +126,4 @@ wait "$a_pid"; a_status=$?
 wait "$b_pid"; b_status=$?
 a_pid= b_pid=
 [[ $a_status -eq 0 && $b_status -eq 0 ]] || { echo "FAIL: exit codes $a_status/$b_status"; exit 1; }
-echo "both nodes exited 0 — zero harness drops on either"
+echo "both nodes exited 0: zero harness drops on either"

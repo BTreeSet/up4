@@ -12,8 +12,8 @@ use benches::{count_allocations, loopback::Fixture};
 ///
 /// Spec S13.5 asks for a million frames over a bench run; a million round trips
 /// through a real socket takes minutes, so the *test* uses a number that keeps
-/// `cargo test` honest and quick. The property is per-frame — zero allocations,
-/// not "few" — so it does not weaken with the count.
+/// `cargo test` honest and quick. The property is per-frame (zero allocations,
+/// not "few"), so it does not weaken with the count.
 const ROUNDS: usize = 320;
 const BATCH: usize = 64;
 const FRAMES: usize = ROUNDS * BATCH;

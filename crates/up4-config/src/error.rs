@@ -196,7 +196,7 @@ impl Errors {
     /// otherwise.
     ///
     /// `built` is `None` exactly when some refinement failed, and every failed
-    /// refinement pushed an error — so the third arm is unreachable, and says
+    /// refinement pushed an error, so the third arm is unreachable, and says
     /// so in a value rather than a panic.
     pub(crate) fn into_result<T>(self, built: Option<T>) -> Result<T, ConfigErrors> {
         let mut it = self.0.into_iter();

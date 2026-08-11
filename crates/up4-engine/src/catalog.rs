@@ -3,7 +3,7 @@
 //! up4 ships one set of P4 programs and three independent ways to execute
 //! them. Those are separate axes, so they are separate types: a [`Selection`]
 //! is a [`Program`] paired with a [`Backend`], and because both are closed and
-//! every pair is implemented, [`build`] is **total** — there is no "unknown
+//! every pair is implemented, [`build`] is **total**: there is no "unknown
 //! pipeline" path to handle at run time, and no way to name a combination that
 //! does not exist.
 //!
@@ -12,7 +12,7 @@
 //! backend would be meaningless. It is therefore a separate variant rather than
 //! a third program, which is what keeps the product total.
 //!
-//! Each backend also carries [`BackendFacts`] describing what it actually is —
+//! Each backend also carries [`BackendFacts`] describing what it actually is:
 //! where its code came from, whether it allocates per frame, how it executes.
 //! Those facts are reported by `up4ctl info`, and the documentation quotes them
 //! rather than asserting anything of its own. A backend that gets slower or
@@ -61,7 +61,7 @@ impl Program {
             // a malformed payload nor invalidates a checksum.
             Self::L2Fwd => Envelope::IDENTITY,
             // A router acts on the IPv4 header, so it declines to route one
-            // that contradicts itself — and having decremented the TTL, it
+            // that contradicts itself, and having decremented the TTL, it
             // must not leave a stale checksum behind.
             Self::L3Fwd => Envelope {
                 admit: Admission::CoherentIpv4,
@@ -84,7 +84,7 @@ impl Program {
     /// Two architectures, because the two P4 compilers target different ones.
     /// The forwarding logic is the same program in both; what differs is the
     /// metadata plumbing each architecture provides. Nothing textual ties the
-    /// two together — the conformance corpus does, by requiring every backend
+    /// two together; the conformance corpus does, by requiring every backend
     /// to produce identical output on identical input.
     #[must_use]
     pub const fn source(self, arch: Arch) -> &'static str {
@@ -161,7 +161,7 @@ impl Backend {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Provenance {
     /// Written by hand against the `.p4` source. The source is the artifact of
-    /// record, but nothing mechanical enforces the correspondence — only the
+    /// record, but nothing mechanical enforces the correspondence; only the
     /// conformance corpus does.
     HandRendered,
     /// Emitted by a P4 compiler from the `.p4` source.
@@ -182,7 +182,8 @@ pub enum AllocProfile {
     None,
     /// Allocates per frame, for the stated reason.
     PerFrame {
-        /// Why — named so the cost is attributable, not folded into a number.
+        /// Why, named so the cost is attributable rather than folded into a
+        /// number.
         reason: &'static str,
     },
 }
@@ -202,7 +203,7 @@ pub enum ExecProfile {
 /// How the uBPF virtual machine executes a program.
 ///
 /// The JIT variant exists only where the **target** architecture has a JIT
-/// backend. On any other target it is not merely disabled — it does not exist,
+/// backend. On any other target it is not merely disabled; it does not exist,
 /// so there is no unsupported-mode error to handle and no runtime check to get
 /// wrong. Keyed on `target_arch`, so cross-compiling to x86_64 from anything
 /// still gets the JIT, and cross-compiling away from it still cannot ask.
@@ -541,7 +542,7 @@ mod tests {
 
     #[test]
     fn the_jit_exists_only_where_the_target_can_run_it() {
-        // Not "is disabled" — does not exist. On a non-x86_64 target the
+        // Not "is disabled": does not exist. On a non-x86_64 target the
         // variant is absent, so no code can select it and no runtime check has
         // to refuse it.
         #[cfg(target_arch = "x86_64")]

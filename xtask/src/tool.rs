@@ -2,7 +2,7 @@
 //!
 //! Nothing here needs root, a system package manager, or a container. The
 //! chain bottoms out at two things a developer already has to build up4 at
-//! all — `cargo` and `git` — plus one static binary fetched over HTTPS.
+//! all (`cargo` and `git`), plus one static binary fetched over HTTPS.
 //!
 //! Every version is pinned, and that is load-bearing rather than tidy: `verify`
 //! compares committed artifacts byte for byte, so an unpinned compiler would
@@ -82,7 +82,7 @@ pub struct Toolchain {
 
 impl Toolchain {
     /// The binary for `tool`. Panics if it was not requested at provision
-    /// time — a programming error, since the set comes from the targets.
+    /// time; a programming error, since the set comes from the targets.
     pub fn path(&self, tool: Tool) -> &Path {
         self.paths
             .get(&tool)

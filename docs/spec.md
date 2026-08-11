@@ -157,8 +157,8 @@ capabilities once at startup (`gro: on/off, gso: on/off, max_gso_segments`).
 Per shard thread, loop:
 
 1. `recvmmsg`-style batched receive through quinn-udp into a preallocated
-   arena: `RX_BATCH = 64` iovecs. Size each slot from quinn-udp itself —
-   `max_udp_payload_size() * gro_segments()` — do not hardcode 64 KiB:
+   arena: `RX_BATCH = 64` iovecs. Size each slot from quinn-udp itself
+   (`max_udp_payload_size() * gro_segments()`); do not hardcode 64 KiB:
    `gro_segments()` is `UDP_GRO_CNT_MAX = 64` on Linux, so at up4's 1472 B
    segment a fully coalesced read is ~92 KiB and a 64 KiB slot truncates it.
    Arena is allocated once at startup.
@@ -431,7 +431,7 @@ M4 x4c build integration + adapter + table shim, program `l2fwd` (static MAC
    table, broadcast on miss). Done when: conformance corpus for l2fwd passes.
 M5 Program `l3fwd` (LPM + TTL decrement + checksum zero-fill) + punt port.
    Done when: A2, A3, A4 pass on loopback.
-M6 Cluster validation + benches + RESULTS.md. Done when: A1–A7 on the real
+M6 Cluster validation + benches + RESULTS.md. Done when: A1-A7 on the real
    cluster, or deviations documented with probe output attached.
 
 ## S16. Explicitly out of scope for v1 (do not implement)

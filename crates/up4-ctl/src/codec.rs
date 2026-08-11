@@ -2,7 +2,7 @@
 //!
 //! `SOCK_SEQPACKET` already preserves message boundaries; the `u32` length
 //! prefix the spec mandates rides along and is *checked*, which turns a
-//! truncated read — the one way a datagram socket can silently lie — into a
+//! truncated read, the one way a datagram socket can silently lie, into a
 //! loud error instead of a parse failure at some arbitrary byte.
 
 use serde::{Serialize, de::DeserializeOwned};

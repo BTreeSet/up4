@@ -5,7 +5,7 @@
 //! private and every operation that could invalidate their relationship is a
 //! total function returning `Result`, so "frame longer than its buffer" and
 //! "encapsulated past the front of the arena" are states a pipeline cannot
-//! construct — not states the harness checks for afterwards.
+//! construct, not states the harness checks for afterwards.
 //!
 //! Deviation from the literal spec S7.1 struct, recorded in
 //! `docs/deviations.md`: the fields are accessors rather than `pub`, because

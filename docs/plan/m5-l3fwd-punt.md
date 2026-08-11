@@ -1,6 +1,6 @@
-# M5 — l3fwd + punt port
+# M5: l3fwd + punt port
 
-Spec: S7.2 (adapter/checksums), S8.3 (punt), S14 A2–A4.
+Spec: S7.2 (adapter/checksums), S8.3 (punt), S14 A2-A4.
 Done-when: A2, A3, A4 pass on loopback (S15 M5).
 
 ## l3fwd
@@ -13,7 +13,7 @@ Done-when: A2, A3, A4 pass on loopback (S15 M5).
 - [ ] Checksum zero-fill validated by conformance masking: the mask list is
       exactly IPv4 hdr checksum + L4 checksums; a l3fwd rewrite that misses
       zeroing shows up as a BMv2 diff. If it doesn't, the adapter sniff is
-      wrong — fix the adapter, not the mask.
+      wrong; fix the adapter, not the mask.
 
 ## Punt
 
@@ -26,8 +26,8 @@ Done-when: A2, A3, A4 pass on loopback (S15 M5).
 ## Acceptance on loopback
 
 - [ ] A2: ≥ 812 kpps at 1460 B with l3fwd + 1k routes, zero harness drops,
-      60 s. Measure and **record** the 64 B ceiling — no target, report it
-      (A2, README "what you do not get").
+      60 s. Measure and **record** the 64 B ceiling; there is no target, only
+      a number to report (A2, README "what you do not get").
 - [ ] A3: l2fwd + l3fwd corpora green post-masking.
 - [ ] A4: `up4ctl table-add` visible in forwarding ≤ 100 ms after the CLI
       returns; enable the M3 `#[ignore]` test arm.

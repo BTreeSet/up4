@@ -22,7 +22,7 @@ unchanged. Only match-action execution moves into the VM.
 
 The JIT exists only where the **target** architecture supports one. Elsewhere
 the variant does not exist at all, so there is no unsupported-mode error to
-handle — see `ExecMode` in `up4-engine`'s catalog.
+handle; see `ExecMode` in `up4-engine`'s catalog.
 
 ## Design notes for the VM (established, not yet built)
 
@@ -53,7 +53,7 @@ the Rust side.
 **A helper must read the key out of VM memory.** rbpf helpers are plain
 `fn(u64, u64, u64, u64, u64) -> u64` with no context, so the table context
 arrives through a thread-local, and the key pointer is a host address into
-memory rbpf owns. Reading it requires one `unsafe` block — the same trust
+memory rbpf owns. Reading it requires one `unsafe` block, the same trust
 uBPF's own C runtime takes, and the reason this crate is separate from
 `up4-engine`. It needs a new `Warrant` in the allowlist; the returned value
 pointer must live in a per-engine arena registered with

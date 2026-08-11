@@ -1,7 +1,7 @@
 //! up4's generation toolchain, as a model rather than a script.
 //!
 //! Two of up4's three backends are compiler output. Their artifacts are
-//! committed, so the repository can be built without either compiler present —
+//! committed, so the repository can be built without either compiler present,
 //! and so those artifacts can be reviewed. That arrangement has one failure
 //! mode: a `.p4` source edited without regenerating, leaving committed code
 //! that no longer corresponds to its source of record.
@@ -9,7 +9,7 @@
 //! This binary exists to make that state detectable and fixable. The shape:
 //!
 //! * A [`Target`] is a committed artifact that a compiler produced. It knows
-//!   its source, its outputs, and its [`Recipe`] — a list of [`Step`]s that are
+//!   its source, its outputs, and its [`Recipe`]: a list of [`Step`]s that are
 //!   *data*, not actions.
 //! * [`realize`] runs a recipe into a scratch directory and returns
 //!   `(produced, committed)` pairs. It is the only code that runs a compiler.
@@ -18,14 +18,14 @@
 //!   compares bytes and reports divergence.
 //!
 //! So "regenerate" and "is the checkout stale?" are not two procedures that
-//! must be kept in step — they are one procedure consumed two ways, and they
+//! must be kept in step; they are one procedure consumed two ways, and they
 //! cannot disagree.
 //!
 //! **Userspace, no root.** Every tool is provisioned into a cache directory
 //! without a package manager that needs privileges: micromamba is a static
 //! binary, p4c is built from source inside a micromamba environment, and clang
 //! comes from that same environment rather than the host. That last point is
-//! not convenience — BPF object files are compared byte for byte, so the
+//! not convenience: BPF object files are compared byte for byte, so the
 //! compiler that produces them has to be pinned, not whatever the runner
 //! happens to ship.
 
@@ -40,13 +40,13 @@ use tool::{Tool, Toolchain};
 /// What the caller wants done with the artifacts a recipe produces.
 ///
 /// Closed, and every variant is a fold over the same `(produced, committed)`
-/// pairs — which is what keeps regeneration and staleness-detection from
+/// pairs, which is what keeps regeneration and staleness-detection from
 /// drifting apart.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Mode {
     /// Compare each `.p4` against the hash recorded when its artifact was
     /// generated. Needs **no compiler**, so it runs in a second on any
-    /// machine — which is what makes it the gate every pull request can
+    /// machine, which is what makes it the gate every pull request can
     /// afford. It catches the failure that actually happens: a source edited
     /// without regenerating.
     Audit,
@@ -87,7 +87,7 @@ impl Mode {
 /// A committed artifact that a compiler produced.
 ///
 /// Closed over the backends that need generation. `native` is absent because
-/// it is written by hand — there is nothing to regenerate, which is exactly
+/// it is written by hand, so there is nothing to regenerate, which is exactly
 /// the property that distinguishes it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Target {
@@ -150,7 +150,7 @@ impl Target {
     /// than a byte comparison that fails for the wrong reason.
     fn fidelity(self) -> Fidelity {
         match self {
-            // x4c emits items in a nondeterministic order — two runs over an
+            // x4c emits items in a nondeterministic order: two runs over an
             // unchanged source produce files of identical length with blocks
             // in different positions, which is what an unordered map in a code
             // generator looks like from outside. Byte comparison would report
@@ -213,7 +213,7 @@ fn realize(
 
             // Format on generation. `cargo fmt --check` covers the workspace,
             // and formatting afterwards would make the committed file differ
-            // from what the generator emits — which is what Verify detects.
+            // from what the generator emits, which is what Verify detects.
             run(Command::new(tc.path(Tool::Rustfmt))
                 .arg("--edition")
                 .arg("2024")
@@ -250,8 +250,8 @@ fn realize(
                 // BPF is a freestanding target with no libc, and the generated
                 // C needs only stdint/stdbool/stddef, which clang ships. It
                 // also removes the host's glibc headers from the inputs, so
-                // the object bytes do not depend on the machine that built it
-                // — which is what makes byte-comparison in Verify meaningful.
+                // the object bytes do not depend on the machine that built it,
+                // which is what makes byte-comparison in Verify meaningful.
                 .args(["-O2", "-target", "bpf", "-nostdlibinc", "-c"])
                 .arg(c.file_name().unwrap())
                 .arg("-o")
@@ -335,8 +335,8 @@ enum Fidelity {
     /// hand-edited one.
     ByteIdentical,
     /// Compare a hash of the source against the one recorded when the artifact
-    /// was generated. Catches the failure that actually happens — a `.p4`
-    /// edited without regenerating — but not a hand-edited artifact, because
+    /// was generated. Catches the failure that actually happens (a `.p4`
+    /// edited without regenerating) but not a hand-edited artifact, because
     /// the compiler does not produce a stable target to compare against.
     SourceWitness,
 }
@@ -517,7 +517,7 @@ fn main() -> std::process::ExitCode {
 /// recorded when its artifact was generated.
 ///
 /// Cost: one read and one pass per `.p4`. Nothing is built, nothing is
-/// fetched, so this is affordable on every pull request — unlike the byte
+/// fetched, so this is affordable on every pull request, unlike the byte
 /// comparison, which has to build two P4 compilers first.
 fn audit(targets: &[Target], root: &Path) -> std::process::ExitCode {
     let recorded = match std::fs::read_to_string(root.join(WITNESS)) {

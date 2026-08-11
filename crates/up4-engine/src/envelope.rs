@@ -6,14 +6,14 @@
 //! ```
 //!
 //! Both ends are up4's, not P4's, and both are declared on the
-//! [`Program`](crate::catalog::Program) rather than on a backend — see below.
+//! [`Program`](crate::catalog::Program) rather than on a backend; see below.
 //!
 //! # Why neither end is in the `.p4`, and neither is in a backend
 //!
 //! A P4 parser rejects for exactly one reason: `extract` ran out of bytes. It
 //! never checks that the bytes it took agree with each other. So "the IPv4
-//! header does not contradict itself" — version 4, a header length that is
-//! legal and actually present — has no expression in either `.p4` of record,
+//! header does not contradict itself" (version 4, a header length that is
+//! legal and actually present) has no expression in either `.p4` of record,
 //! and adding one would either fail to compile on x4c or make the two
 //! bindings diverge from each other.
 //!
@@ -37,10 +37,10 @@
 //! ```
 //!
 //! Every backend computes that same composition. The `native` rendering fuses
-//! both ends into its own code — `admit` is already `Ipv4::parse`'s
+//! both ends into its own code: `admit` is already `Ipv4::parse`'s
 //! precondition and `scrub` is already its deparser's last statement, so
-//! running either again would be a redundant pass over the same bytes — while
-//! the compiled backends, whose programs are opaque, compose them explicitly
+//! running either again would be a redundant pass over the same bytes. The
+//! compiled backends, whose programs are opaque, compose them explicitly
 //! through [`Enveloped`]. Same function, two factorizations; the conformance
 //! corpus and the end-to-end tests hold the fusion honest, and
 //! `fusion_is_sound_for_every_version_and_ihl` below proves the ingress half
@@ -59,8 +59,8 @@ use crate::{Engine, FrameCtx, Pipeline, TableOps, Verdict};
 pub enum Admission {
     /// Nothing is refused here; the program's own parser is the only gate.
     ///
-    /// A bridge forwards on MAC addresses and has no opinion about the payload
-    /// — refusing a malformed IPv4 packet would be a routing decision made by
+    /// A bridge forwards on MAC addresses and has no opinion about the payload:
+    /// refusing a malformed IPv4 packet would be a routing decision made by
     /// a program that does not route.
     Everything,
     /// A frame announcing `ethertype == 0x0800` must carry an IPv4 header that
@@ -69,7 +69,7 @@ pub enum Admission {
     ///
     /// A router acts on that header, so one that disagrees with itself is a
     /// packet up4 declines to route (docs/deviations.md D10). Frames that are
-    /// not IPv4 pass through untouched — refusing them is the program's job,
+    /// not IPv4 pass through untouched; refusing them is the program's job,
     /// not this one's.
     CoherentIpv4,
 }
@@ -82,7 +82,7 @@ pub enum Admission {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Scrub {
     /// Nothing. A program that modifies no header leaves every checksum
-    /// exactly as valid — or as invalid — as it found it, and rewriting one it
+    /// exactly as valid (or as invalid) as it found it, and rewriting one it
     /// did not invalidate would corrupt a frame the switch did not touch.
     Nothing,
     /// Zero the IPv4 header checksum and the transport checksum it contains
@@ -113,7 +113,7 @@ impl Admission {
         match self {
             Self::Everything => true,
             Self::CoherentIpv4 => match Ethernet::parse(frame) {
-                // Not IPv4 — or not even Ethernet. Either way this check has
+                // Not IPv4, or not even Ethernet. Either way this check has
                 // nothing to say, and the program's parser will decide.
                 Some(eth) if eth.ethertype == ETHERTYPE_IPV4 => {
                     Ipv4::parse(frame, ETH_HDR_LEN).is_some()
@@ -228,8 +228,8 @@ mod tests {
     }
 
     /// The law that lets `up4_catalog::build` leave the `native` backend
-    /// unwrapped: over the entire domain the check inspects — all 256 values
-    /// of the version/IHL byte — admission and the native parser agree
+    /// unwrapped: over the entire domain the check inspects (all 256 values
+    /// of the version/IHL byte) admission and the native parser agree
     /// exactly. Fusion is therefore not an approximation.
     #[test]
     fn fusion_is_sound_for_every_version_and_ihl() {
@@ -259,7 +259,7 @@ mod tests {
     }
 
     /// A truncated IPv4 header is refused for the reason the program would
-    /// have refused it anyway — the check never *admits* what P4 rejects.
+    /// have refused it anyway; the check never *admits* what P4 rejects.
     #[test]
     fn a_truncated_ipv4_header_is_refused() {
         let f = frame();

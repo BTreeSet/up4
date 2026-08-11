@@ -1,8 +1,8 @@
 //! Loading a pipeline: the one place every backend is named.
 #![deny(missing_docs)]
 //!
-//! [`up4_engine::catalog`] models what can be loaded — `Program × Backend` as
-//! closed sums — but it cannot *build* the compiled backends without depending
+//! [`up4_engine::catalog`] models what can be loaded (`Program × Backend` as
+//! closed sums), but it cannot *build* the compiled backends without depending
 //! on them, and they depend on it. So the total function lives here, in the
 //! crate above all three, where the dependency graph is a DAG.
 //!
@@ -15,7 +15,7 @@ use up4_engine::{Pipeline, PipelineParams};
 
 /// Load a selection. Total over `Selection`.
 ///
-/// What a backend runs is `admit(program) ; p4(program) ; scrub(program)` —
+/// What a backend runs is `admit(program) ; p4(program) ; scrub(program)`:
 /// the program's ingress check and its departing fix-up wrapped around the
 /// compiled P4 (see [`up4_engine::envelope`]). The `native` rendering already
 /// fuses both ends into its own parser and deparser, so wrapping it would be a

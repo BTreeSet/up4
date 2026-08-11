@@ -1,4 +1,4 @@
-# M3 — up4-ctl + up4-metrics
+# M3: up4-ctl + up4-metrics
 
 Spec: S8 (ctl), S9 (metrics), S12 (logging/shutdown).
 Done-when: integration test S13.3 passes with NullEngine; counters snapshot
@@ -6,14 +6,14 @@ correctly (S15 M3).
 
 ## up4-metrics
 
-- [ ] Flat registry of `AtomicU64`, names **exactly** as S9 — the
+- [ ] Flat registry of `AtomicU64`, names **exactly** as S9: the
       harness-drop/`engine_drop` separation is a product requirement.
 - [ ] Per-vport counter blocks indexed by `VportId`; histograms as fixed
       `[AtomicU64; 7]` bucket arrays (1,2,4,8,16,32,64) + overflow.
 - [ ] Snapshot → JSON. Appender thread: if `metrics_interval_s > 0`, one JSON
       line per interval to `up4-metrics-<node>.jsonl`.
-- [ ] All hot-path increments `Relaxed`; snapshots use `SeqCst` reads — order
-      between counters is explicitly not guaranteed; document it.
+- [ ] All hot-path increments `Relaxed`; snapshots use `SeqCst` reads; order
+      between counters is explicitly not guaranteed. Document it.
 
 ## up4-ctl
 
@@ -22,7 +22,7 @@ correctly (S15 M3).
 - [ ] Commands (S8.2): `ping`, `info` (build info, pipeline, probe results),
       `counters`, `shutdown` (stop rx → flush tx → final snapshot → exit 0).
       `table-add/del/dump` wired now, returning `engine has no tables` until
-      M4 lands the shim — one match arm, not a stub framework.
+      M4 lands the shim: one match arm, not a stub framework.
 - [ ] Punt (S8.3): bounded SPSC queue depth 1024, producer = shard thread,
       consumer = ctl thread; full → `punt_overflow_drop`. `punt-drain` returns
       up to N frames base64. Document `packet-out` as v2.
@@ -31,7 +31,7 @@ correctly (S15 M3).
 ## Cross-cutting
 
 - [ ] WARN rate limiter (S12): per-condition-class struct
-      `{ count: AtomicU64, last_log: AtomicU64 }` — first occurrence logs,
+      `{ count: AtomicU64, last_log: AtomicU64 }`: first occurrence logs,
       then a count line every 10 s. Hand-rolled, ~30 lines, no dep.
 - [ ] SIGTERM handling: `sigwait` thread via `libc` lives in **up4-io** (OS
       plumbing; the only place `unsafe` is legal, S1.7), exposing

@@ -1,4 +1,4 @@
-# M1 — up4-wire + up4-config + probe
+# M1: up4-wire + up4-config + probe
 
 Spec: S2 (layout), S4 (wire), S5 (config), S11.1 (probe), S12 (fatal-error
 shape). Done-when: unit tests green, probe runs on a stock Linux box (S15 M1).
@@ -14,14 +14,14 @@ shape). Done-when: unit tests green, probe runs on a stock Linux box (S15 M1).
 
 ## up4-wire (pure, no I/O, no deps)
 
-- [ ] `Hdr { ingress_vport: u16, seq: u32, ts_us: u32 }` — version/flags are
+- [ ] `Hdr { ingress_vport: u16, seq: u32, ts_us: u32 }`: version/flags are
       constants in v1, not fields; illegal versions die in `decode`.
 - [ ] `WireError`: closed enum `{ ShortBuffer, BadVersion(u8) }`. No `thiserror`.
 - [ ] `encode(&Hdr, &mut [u8; OVERLAY_HDR_LEN])`, `decode(&[u8]) -> Result<Hdr, WireError>`.
       Branch-light, alloc-free, big-endian via `to_be_bytes`/`from_be_bytes`.
 - [ ] Constants: `OVERLAY_HDR_LEN = 12`, `INNER_MTU_V4 = 1460`, `INNER_MTU_V6 = 1440`.
 - [ ] Tests: every reject case; round-trip property test over a deterministic
-      xorshift PRNG loop (~1 M cases). No proptest/quickcheck — closed dep
+      xorshift PRNG loop (~1 M cases). No proptest/quickcheck: closed dep
       list (S2); a seeded loop is the whole requirement.
 
 ## up4-config (parse, don't validate)

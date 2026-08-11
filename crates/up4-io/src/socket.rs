@@ -19,7 +19,8 @@ use std::{
 /// Receive slots per batched syscall.
 ///
 /// quinn-udp's `recv` caps at its own `BATCH_SIZE`, so asking for more would
-/// allocate arena slots that `recvmmsg` can never fill — several MiB per shard.
+/// allocate arena slots that `recvmmsg` can never fill, several MiB per
+/// shard.
 /// Spec S6.2 names 64; the library's cap is the operative number and is
 /// recorded in `docs/deviations.md`.
 pub const RX_BATCH: usize = quinn_udp::BATCH_SIZE;
@@ -32,7 +33,7 @@ pub const TX_BATCH: usize = 64;
 ///
 /// A GSO write is one datagram to the kernel until it segments it, so it is
 /// bounded by what an IPv4 datagram can hold: 65535 less the 20-byte IP and
-/// 8-byte UDP headers. Exceeding it fails with `EMSGSIZE` — which quinn-udp
+/// 8-byte UDP headers. Exceeding it fails with `EMSGSIZE`, which quinn-udp
 /// *swallows* (see [`FabricSocket::send`]), so the frames would vanish without
 /// a counter. The transmit path partitions batches to respect this.
 pub const GSO_MAX_BYTES: usize = 65535 - 20 - 8;
@@ -110,7 +111,7 @@ impl FabricSocket {
 
         // quinn-udp probes GRO/GSO here and degrades on its own if either is
         // unavailable, which is the fallback spec S17 requires. It also puts
-        // the socket into non-blocking mode for its async users — which up4
+        // the socket into non-blocking mode for its async users, which up4
         // keeps, deliberately. See `FabricSocket::recv`.
         let state = UdpSocketState::new(UdpSockRef::from(&sock))?;
         let caps = SocketCaps {
@@ -147,13 +148,13 @@ impl FabricSocket {
     /// ## Why this is not simply a blocking socket
     ///
     /// `recvmmsg(2)` without `MSG_WAITFORONE` does not return when the first
-    /// message arrives — it waits for **all `vlen`** of them. On a blocking
+    /// message arrives; it waits for **all `vlen`** of them. On a blocking
     /// socket that turns a 32-slot batch into a latency trap: a shard sits on
     /// 31 received frames waiting for a 32nd that may be seconds away, while
     /// the peer's queue backs up behind it. quinn-udp passes no flags and
     /// exposes none, so the batch cannot be told to return early.
     ///
-    /// The alternative — leaving the socket non-blocking, as quinn-udp does —
+    /// The alternative, leaving the socket non-blocking as quinn-udp does,
     /// makes the call return `EAGAIN` immediately and the shard loop a busy
     /// spin, which spec S6.3 forbids and which measurably starves the very
     /// receivers this node is feeding.
@@ -184,7 +185,7 @@ impl FabricSocket {
     /// decides what to do if it is still full afterwards (spec S6.3).
     ///
     /// This calls quinn-udp's `try_send`, not its `send`: the latter reports
-    /// `Ok(())` for every error except `WouldBlock` — including `EMSGSIZE` —
+    /// `Ok(())` for every error except `WouldBlock`, including `EMSGSIZE`,
     /// which is right for a QUIC MTU probe and wrong for a switch, where a
     /// silently discarded batch is precisely the thing spec S1.6 forbids.
     #[inline]

@@ -5,7 +5,7 @@ The `x4c` backend: `p4/programs/*/*.softnpu.p4` compiled to Rust by Oxide's
 
 ## Why this is a crate of its own
 
-`up4-engine` is `#![forbid(unsafe_code)]`. x4c's output is not — it emits
+`up4-engine` is `#![forbid(unsafe_code)]`. x4c's output is not; it emits
 `unsafe impl Send for main_pipeline`. A crate-level `forbid` cannot be relaxed
 per module, so generated code cannot live in the engine without giving up the
 property that makes the engine worth trusting. It lives here instead, where the
@@ -22,7 +22,7 @@ Regenerate with `cargo xtask generate`.
 compiler is built from. Generated code and its runtime are one artifact;
 letting them drift would be a silent miscompile.
 
-This backend allocates on the fast path — x4c models header fields as heap
+This backend allocates on the fast path: x4c models header fields as heap
 `BitVec` and returns a `Vec` per packet. That is not a defect to be fixed here;
 it is a property of the compiler, declared in `Backend::facts()` so the binary
 reports it and the documentation never has to remember to.

@@ -3,7 +3,7 @@
 //! A GitHub Actions cache entry holds one job's `./target` directory. Naming
 //! that entry after the job says nothing about what is inside it, so two jobs
 //! building different cargo profiles could hand each other artifacts built
-//! with different flags — a cache that restores successfully and is wrong.
+//! with different flags: a cache that restores successfully and is wrong.
 //!
 //! The invariant that removes the possibility:
 //!
@@ -12,7 +12,7 @@
 //!
 //! Both halves are checked here. The first makes the key meaningful; without
 //! the second the key could be accurate today and quietly wrong after someone
-//! adds a `--release` step to a `dev`-keyed job — which is precisely the drift
+//! adds a `--release` step to a `dev`-keyed job, which is precisely the drift
 //! that prompted this file.
 //!
 //! New profiles are a supported way to grow: declare `[profile.<name>]` in the
@@ -90,8 +90,9 @@ fn profile_of(cmd: &str) -> Option<String> {
     Some(if sub == "bench" { "bench" } else { "dev" }.to_owned())
 }
 
-/// Parse the workflow into jobs. The format is fixed and shallow — jobs at two
-/// spaces, everything else deeper — so a scanner is honest here and avoids a
+/// Parse the workflow into jobs. The format is fixed and shallow: jobs at two
+/// spaces, everything else deeper. A scanner is therefore honest here and
+/// avoids a
 /// YAML dependency the workspace does not otherwise need (spec S2).
 fn jobs() -> BTreeMap<String, Job> {
     // Every workflow, not just ci.yml: an invariant that one file can evade by
@@ -183,7 +184,7 @@ fn every_cache_key_is_a_declared_cargo_profile() {
             family_root(key)
         );
     }
-    assert!(keyed > 0, "no cache keys found — did the workflow move?");
+    assert!(keyed > 0, "no cache keys found; did the workflow move?");
 }
 
 #[test]
@@ -254,8 +255,8 @@ fn profile_detection_maps_commands_to_the_entry_they_belong_in() {
         ("rustup show active-toolchain", None),
         // A custom profile keeps its own name: it gets its own target
         // directory, so it is its own entry. This is what makes declaring a
-        // new profile — say one for a target that has a uBPF JIT and one for a
-        // target that does not — a supported move rather than a special case.
+        // new profile (say one for a target that has a uBPF JIT and one for a
+        // target that does not) a supported move rather than a special case.
         ("cargo build --profile jit --workspace", Some("jit")),
         ("cargo test --profile nojit", Some("nojit")),
     ];

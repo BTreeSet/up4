@@ -1,4 +1,4 @@
-//! Header parsing and deparsing — the P4 `parser` and `deparser` blocks,
+//! Header parsing and deparsing: the P4 `parser` and `deparser` blocks,
 //! rendered in Rust.
 //!
 //! Two disciplines carry over from P4 and are worth stating:
@@ -6,7 +6,7 @@
 //! * **Validity is `Option`.** A header is either extracted or it is not;
 //!   there is no "valid" bit to forget to check, because an absent header is an
 //!   absent value. A truncated packet yields `None` and the program's control
-//!   block decides what that means — it is never a panic and never a partially
+//!   block decides what that means; it is never a panic and never a partially
 //!   filled struct.
 //! * **Views, not copies.** Each parsed header remembers its offset, so
 //!   modification writes back into the frame in place.
@@ -94,7 +94,7 @@ impl Ipv4 {
     /// Extract an IPv4 header at `offset`.
     ///
     /// Refuses a truncated header, a version other than 4, and an IHL that
-    /// claims more bytes than the frame holds — so `offset + hdr_len` is a
+    /// claims more bytes than the frame holds, so `offset + hdr_len` is a
     /// valid index range for every value this returns, and
     /// [`Ipv4::payload_offset`] is total rather than partial.
     ///
@@ -104,8 +104,8 @@ impl Ipv4 {
     /// compiled backends forward a frame this rejects. up4 keeps the checks
     /// anyway: a well-formed packet never reaches them, and a malformed one is
     /// cheaper to refuse at the parser than to carry through a table lookup
-    /// and a rewrite. The corpus pins the deviation to exactly these two cases
-    /// — see `NATIVE_IS_STRICTER` in `crates/up4-catalog/tests/conformance.rs`,
+    /// and a rewrite. The corpus pins the deviation to exactly these two cases;
+    /// see `NATIVE_IS_STRICTER` in `crates/up4-catalog/tests/conformance.rs`,
     /// which asserts the difference rather than excusing it.
     #[must_use]
     pub fn parse(frame: &[u8], offset: usize) -> Option<Self> {
@@ -154,7 +154,7 @@ impl Ipv4 {
 /// up4 never computes or verifies an inner checksum; the outer UDP checksum
 /// covers integrity on the fabric. Whenever a pipeline may have touched a
 /// header, the containing checksum fields are zero-filled so that a stale
-/// checksum is never mistaken for a valid one — and so the BMv2 differential
+/// checksum is never mistaken for a valid one, and so the BMv2 differential
 /// (S10) compares like with like after masking exactly these fields.
 ///
 /// This is the *only* inner-packet modification the harness itself performs.

@@ -24,14 +24,14 @@ mod tests {
     use p4rs::{Pipeline, packet_in};
 
     /// The load-bearing question for this backend: does compiler output, built
-    /// in up4's workspace, actually forward a frame? Everything else — the
-    /// adapter, the journal, the corpus — is downstream of this being true.
+    /// in up4's workspace, actually forward a frame? Everything else (the
+    /// adapter, the journal, the corpus) is downstream of this being true.
     #[test]
     fn generated_l2fwd_forwards_to_the_port_its_table_names() {
         let mut p = l2fwd::main_pipeline::new(2);
         // Keys are wire order, action parameters little-endian (the ABI
         // up4-engine's `x4c` module pins with fixed vectors).
-        // Least-significant byte first — see the ABI test below. This address
+        // Least-significant byte first; see the ABI test below. This address
         // is a palindrome, so it reads the same either way; the ABI test uses
         // one that does not.
         p.add_table_entry(
@@ -58,7 +58,7 @@ mod tests {
     /// The key ABI, pinned by a value that can tell the two orders apart.
     ///
     /// `p4rs::extract_exact_key` reads the key with `BigUint::from_bytes_le`,
-    /// so a key is the value's bytes **least-significant first** — the reverse
+    /// so a key is the value's bytes **least-significant first**, the reverse
     /// of the order the same field has on the wire. up4-engine's `x4c` module
     /// records this as an unresolved contradiction upstream; this settles it by
     /// experiment rather than by reading, and pins the answer.

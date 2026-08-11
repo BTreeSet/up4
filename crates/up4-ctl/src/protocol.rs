@@ -111,7 +111,7 @@ pub enum Request {
     Info,
     /// Counter snapshot.
     Counters,
-    /// Every table's schema — what to type, straight from the P4 source.
+    /// Every table's schema: what to type, straight from the P4 source.
     Tables,
     /// Install or replace entries.
     TableAdd {

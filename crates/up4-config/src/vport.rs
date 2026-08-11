@@ -109,7 +109,7 @@ impl VportTable {
             .map(|(slot, vp)| (VportIdx(slot as u16), vp))
     }
 
-    /// Resolve a raw id — an engine verdict's port number — to an index.
+    /// Resolve a raw id (an engine verdict's port number) to an index.
     ///
     /// Cost: O(1), one bounds-checked array read.
     #[inline]

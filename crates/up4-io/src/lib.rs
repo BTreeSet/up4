@@ -4,7 +4,7 @@
 //! the capability probe, the clock, and signal handling. The crates below it
 //! ([`up4_wire`], [`up4_config`], [`up4_engine`]) are pure and total, so this
 //! is also the only place that can fail for reasons the type system cannot
-//! rule out — and the only place `unsafe` is permitted (spec S1.7), confined to
+//! rule out, and the only place `unsafe` is permitted (spec S1.7), confined to
 //! four syscalls: `clock_gettime`, `uname`, `setsockopt`, and the
 //! `pthread_sigmask`/`sigwait` pair. Each block carries the invariant it relies
 //! on.

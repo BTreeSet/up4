@@ -54,7 +54,7 @@ pub fn allocations() -> u64 {
 /// Run `body` and report how many allocations it caused.
 ///
 /// Process-wide, so the caller must keep other threads quiet for the count to
-/// mean anything — which is exactly what the fast-path guard does.
+/// mean anything, which is exactly what the fast-path guard does.
 pub fn count_allocations<T>(body: impl FnOnce() -> T) -> (T, u64) {
     let before = allocations();
     let out = body();

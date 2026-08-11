@@ -3,7 +3,7 @@
 //! `p4rs::Pipeline::add_table_entry` takes two opaque byte strings, so the
 //! correspondence between up4's typed control plane and x4c's tables lives
 //! entirely in this module. Every rule below is pinned by a test that would
-//! also fail under the opposite convention — the encodings are *not* uniform,
+//! also fail under the opposite convention; the encodings are *not* uniform,
 //! and reading the upstream extractors is not enough to tell them apart.
 //!
 //! **Exact keys are least-significant byte first.** `extract_exact_key` reads
@@ -47,7 +47,7 @@ impl Encoded {
 
     /// Append `src` least-significant byte first.
     ///
-    /// Panics only on a programming error — the capacity is checked against
+    /// Panics only on a programming error; the capacity is checked against
     /// every schema this crate ships by `encodes_every_shipped_schema`.
     fn push_le(&mut self, src: &[u8]) {
         assert!(
@@ -177,7 +177,7 @@ mod tests {
             value: TypedVal::Ipv4(Ipv4Addr::new(10, 1, 2, 0)),
             prefix_len: 24,
         });
-        // Address in network order, then the length — the shape
+        // Address in network order, then the length, the shape
         // `extract_lpm_key` dispatches on by total length (5 = IPv4).
         assert_eq!(e.as_slice(), &[10, 1, 2, 0, 24]);
         assert_eq!(e.as_slice().len(), key_width(KeyKind::Lpm(ValKind::Ipv4)));

@@ -1,4 +1,4 @@
-# M4 — x4c build integration + adapter + table shim + l2fwd
+# M4: x4c build integration + adapter + table shim + l2fwd
 
 Spec: S7 (engine), S10 (conformance). Done-when: l2fwd conformance corpus
 passes bit-identically post-masking (S15 M4).
@@ -22,8 +22,8 @@ passes bit-identically post-masking (S15 M4).
 - [ ] Egress mapping (S7.2): `drop` → `Drop`; `broadcast` → `Broadcast`;
       port 65535 → `Punt`; else `Forward(port)`.
 - [ ] Checksum zero-fill (S1.5), v1 unconditional: hand-rolled EtherType /
-      IP-proto sniff at canonical offsets (~20 lines). **Not** etherparse —
-      it is dev/test-only per S2. This is the only inner-packet touch the
+      IP-proto sniff at canonical offsets (~20 lines). **Not** etherparse,
+      which is dev/test-only per S2. This is the only inner-packet touch the
       harness performs.
 
 ## Table shim (S7.3)
@@ -35,8 +35,8 @@ passes bit-identically post-masking (S15 M4).
       serialized through a `Mutex` held only during control operations.
       Document consistency: atomic per entry, not per batch; in-flight
       packets may see either version.
-- [ ] Endianness tests against fixed byte vectors (S13.1) — these are the
-      contract, pin them hard.
+- [ ] Endianness tests against fixed byte vectors (S13.1): these are the
+      contract, so pin them hard.
 - [ ] Activate the M3 `table-add/del/dump` arms against the shim.
 
 ## l2fwd + conformance
@@ -50,7 +50,7 @@ passes bit-identically post-masking (S15 M4).
 - [ ] `conformance.rs`: same cases through `Engine` directly, no sockets;
       mask IPv4 header checksum + TCP/UDP checksums on **both** sides, diff
       the rest bit-identically. Mask function shared between the Rust test
-      and the Python runner (two implementations, one documented field list —
+      and the Python runner (two implementations, one documented field list;
       keep them adjacent in the corpus README).
 - [ ] CI gate: missing corpus or failed diff fails the build (S10).
 

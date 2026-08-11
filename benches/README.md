@@ -1,7 +1,7 @@
 # benches
 
 Criterion benchmarks and the fast-path allocation guard. Not CI-gating (spec
-S13.4) — numbers without the machine they were taken on are not results, so
+S13.4): numbers without the machine they were taken on are not results, so
 `RESULTS.md` records both.
 
 `src/lib.rs` holds a counting global allocator. That is the one `unsafe` outside

@@ -17,7 +17,7 @@
 //!
 //! The fourth check is what makes a warrant more than a label. [`Warrant`] is
 //! a closed enum, so a new justification is a visible source change rather
-//! than a new sentence in a comment — and each variant carries a structural
+//! than a new sentence in a comment. Each variant carries a structural
 //! rule ([`Warrant::admits`]) that the file's own path must satisfy. Code
 //! cannot be labelled `Generated` unless it really is under a generated
 //! directory, or `SyscallPlumbing` unless it really is in the crate that owns
@@ -35,8 +35,8 @@ enum Warrant {
     /// Calls into libc that have no safe equivalent. Confined to `up4-io` by
     /// spec S1.7: the crate that owns sockets, clocks, and signals.
     SyscallPlumbing,
-    /// Compiler output. up4 does not edit it — editing it would break the
-    /// regenerate-and-diff check — so the `unsafe` it contains is the
+    /// Compiler output. up4 does not edit it, since editing it would break the
+    /// regenerate-and-diff check, so the `unsafe` it contains is the
     /// upstream compiler's, reviewed once at the seam rather than per line.
     Generated,
     /// Crossing into memory a bytecode VM owns. rbpf helpers are bare
@@ -153,7 +153,7 @@ fn repo_root() -> PathBuf {
 
 /// Whether `line` uses the keyword, as opposed to mentioning it.
 ///
-/// Excludes comments and the `forbid` attribute that proves its absence —
+/// Excludes comments and the `forbid` attribute that proves its absence,
 /// the same filter the workflow used, kept here so there is one definition.
 fn uses_keyword(line: &str) -> bool {
     let t = line.trim_start();
@@ -232,7 +232,7 @@ fn the_site_count_of_each_allowed_file_is_exact() {
         assert_eq!(
             actual, e.sites,
             "{} is allowed {} site(s) but has {actual}. If the new site is \
-             warranted, say so by updating `sites` — growth inside an allowed \
+             warranted, say so by updating `sites`: growth inside an allowed \
              file should be as visible as a new file.",
             e.path, e.sites
         );

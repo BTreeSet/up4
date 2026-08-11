@@ -127,8 +127,8 @@ mod tests {
     ///
     /// The signal is directed at the watcher thread specifically. A
     /// process-directed `raise` would be delivered to whichever thread has it
-    /// unblocked — under the test harness, one that never called
-    /// [`block_terminating_signals`] — and would take the default action.
+    /// unblocked (under the test harness, one that never called
+    /// [`block_terminating_signals`]) and would take the default action.
     #[test]
     fn a_signal_becomes_a_flag() {
         use std::os::unix::thread::JoinHandleExt;

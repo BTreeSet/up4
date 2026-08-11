@@ -46,7 +46,7 @@ impl Fixture {
     /// [`Fixture::start`] with the program executed by a named backend.
     ///
     /// A *program* is configured; which backend runs it is a separate axis, so
-    /// nothing else about the node changes — same sockets, same shard, same
+    /// nothing else about the node changes: same sockets, same shard, same
     /// routes. That is what makes a backend-to-backend throughput comparison
     /// mean something.
     pub fn start_on(
@@ -211,7 +211,7 @@ pub fn install(
         .expect("install");
 }
 
-/// Install `count` /24 routes out of vport 1 — the route set A2 measures with.
+/// Install `count` /24 routes out of vport 1, the route set A2 measures with.
 pub fn install_routes(pipeline: &dyn Pipeline, count: u32) {
     for (key, port) in routes(count) {
         install(

@@ -32,7 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          # Nothing here pushes, and CI compiles and runs pull-request code —
+          # Nothing here pushes, and CI compiles and runs pull-request code,
           # including whatever build scripts it brings. Leaving the token in
           # .git/config (the action's default) would hand it to them.
           persist-credentials: false
@@ -51,15 +51,15 @@ jobs:
       #
       # `save-if` defaults to true, so without this a pull-request run writes a
       # cache of its own build output. GitHub scopes that write to the PR's own
-      # ref — main cannot restore it ("Workflow runs cannot restore caches
-      # created for child branches or sibling branches") — but it can still
+      # ref, so main cannot restore it ("Workflow runs cannot restore caches
+      # created for child branches or sibling branches"), but it can still
       # poison later runs *of that same pull request*, and it competes for the
       # repository's shared cache quota, evicting entries main depends on.
       # GitHub's own guidance for read-only-cache triggers is the same shape:
       # let a `push` workflow do the saving and let everything else restore.
       #
       # The key is *exactly* the name of the cargo profile whose artifacts the
-      # entry holds, and each job builds exactly one profile — `dev` here
+      # entry holds, and each job builds exactly one profile: `dev` here
       # (`cargo test` and `cargo clippy` build with the `test` profile, which
       # takes `dev`'s settings and so shares its artifacts), `release` in the
       # job below.
@@ -67,7 +67,7 @@ jobs:
       # This is an invariant, not a convention: crates/up4d/tests/ci_cache_keys.rs
       # fails the build if a key is not a declared profile, if a keyed job
       # builds any other profile, or if a job with no build claims an entry.
-      # New profiles are the supported way to grow — declare `[profile.<name>]`
+      # New profiles are the supported way to grow: declare `[profile.<name>]`
       # in the workspace manifest and `<name>` becomes a legal key with no
       # change to the test.
       - uses: Swatinem/rust-cache@v2
@@ -85,11 +85,11 @@ jobs:
         run: cargo clippy --workspace --all-targets --features up4d/oracle -- -D warnings
 
       # The end-to-end tests bind loopback ports and spawn up4d processes, all
-      # as an ordinary user — which is the point (spec S1.1).
+      # as an ordinary user, which is the point (spec S1.1).
       #
       # This also runs the repository's own invariants, which are tests rather
       # than workflow steps so that they hold on a developer's machine too:
-      # crates/up4d/tests/unsafe_audit.rs (spec S1.7, A7 — every use of
+      # crates/up4d/tests/unsafe_audit.rs (spec S1.7, A7: every use of
       # `unsafe` is on an allowlist, with an exact site count and a warrant
       # that must be true of the path) and crates/up4d/tests/ci_cache_keys.rs
       # (a cache key is exactly the profile whose artifacts it holds).
@@ -100,7 +100,7 @@ jobs:
         run: python3 tools/corpus/gen_corpus.py --check
 
       # Spec S1.1: no capabilities, no sysctls, no raw sockets, no TUN/TAP, no
-      # namespaces — not required and not attempted.
+      # namespaces, not required and not attempted.
       - name: Audit privileged interfaces
         run: |
           if grep -rnE 'CAP_NET|setcap|sysctl -w|SOCK_RAW|/dev/net/tun|unshare\(|setns\(' \
@@ -135,7 +135,7 @@ jobs:
       # `.p4` against the value recorded in p4/generated.lock when the artifact
       # was produced. Seconds, on any machine.
       #
-      # The stronger check — regenerate and compare bytes — has to build both
+      # The stronger check (regenerate and compare bytes) has to build both
       # P4 compilers from source, which does not fit in a pull-request job and
       # would be killed by cancel-in-progress anyway. It lives in
       # p4-artifacts.yml, on a schedule, with the time it needs.
@@ -155,7 +155,7 @@ jobs:
           submodules: false
 
       # `release`, for the same reason the other job's key is `dev`: the key
-      # names the profile in the entry. `cargo bench` would belong here too —
+      # names the profile in the entry. `cargo bench` would belong here too;
       # the `bench` profile inherits `release`.
       - uses: Swatinem/rust-cache@v2
         with:

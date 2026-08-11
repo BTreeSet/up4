@@ -3,7 +3,7 @@
 //! A node's entire control surface is one `SOCK_SEQPACKET` socket speaking
 //! length-prefixed JSON: liveness, build and topology info, counter snapshots,
 //! table reads and writes, punt drain, and graceful shutdown. There is no
-//! authentication because there is no network exposure — the socket is mode
+//! authentication because there is no network exposure: the socket is mode
 //! 0600 and the filesystem is the boundary (spec S8.1).
 //!
 //! Table writes carry the text an operator typed and are refined against the

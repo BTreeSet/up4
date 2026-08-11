@@ -2,13 +2,13 @@
 //!
 //! pktgen is an up4 *peer*: it speaks the same overlay format a node does, so a
 //! node cannot tell it from another switch. It sends on one thread, receives on
-//! another, and reports what it achieved rather than what it was asked for —
+//! another, and reports what it achieved rather than what it was asked for;
 //! the whole point is to measure the difference.
 //!
 //! Loss is derived from the overlay sequence numbers, not from arrival counts,
 //! so a run reports *where* frames went missing rather than only how many.
 //! One-way latency comes from the overlay timestamp; both sides read the same
-//! `CLOCK_MONOTONIC`, which is only meaningful on one host — a cross-host run
+//! `CLOCK_MONOTONIC`, which is only meaningful on one host. A cross-host run
 //! reports it labelled as an uncalibrated clock delta (spec S11.2).
 
 use crate::frame::{FrameSpec, FrameTemplate};
@@ -37,7 +37,7 @@ pub const DRAIN_GRACE: Duration = Duration::from_millis(500);
 /// What to generate.
 #[derive(Clone, Debug)]
 pub struct PktgenConfig {
-    /// Address this generator binds — must be a configured peer of `target`.
+    /// Address this generator binds; must be a configured peer of `target`.
     pub bind: SocketAddr,
     /// The node's fabric address.
     pub target: SocketAddr,
@@ -340,7 +340,7 @@ fn finish(
     }
 }
 
-/// The `p`th percentile of a sorted slice, by index — no interpolation, no
+/// The `p`th percentile of a sorted slice, by index; no interpolation, no
 /// histogram dependency (spec S11.2).
 fn percentile(sorted: &[i64], p: usize) -> i64 {
     if sorted.is_empty() {

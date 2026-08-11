@@ -54,7 +54,7 @@ pub const SCHEMAS: &[TableSchema] = &[TableSchema {
     ],
 }];
 
-/// The actions `mac_dst` may run — the P4 `actions = { ... }` list, closed.
+/// The actions `mac_dst` may run: the P4 `actions = { ... }` list, closed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Action {
     Forward(u16),

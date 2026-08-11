@@ -1,7 +1,7 @@
 //! The receive/transmit path end to end, over real loopback sockets.
 //!
-//! These tests drive a `Shard` the way the fabric does — by sending it overlay
-//! segments — and check both what comes out and what the counters say about it.
+//! These tests drive a `Shard` the way the fabric does, by sending it overlay
+//! segments, and check both what comes out and what the counters say about it.
 //! The engine is the null oracle, so a mismatch here is the harness's fault and
 //! not a pipeline's.
 

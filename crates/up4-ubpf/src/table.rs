@@ -34,7 +34,7 @@ pub struct Layout {
     /// The slice of the key image that participates in matching.
     ///
     /// p4c's LPM key is `{ uint32_t prefix_len0; uint32_t field; }` and the
-    /// generated code zero-initialises the struct and sets only the field —
+    /// generated code zero-initialises the struct and sets only the field;
     /// the prefix length is the *host's* to supply, because the host does the
     /// prefix search. So matching reads a window of the key, not all of it.
     pub match_at: usize,
@@ -129,7 +129,7 @@ pub const MAX_MATCH_LEN: usize = 64;
 /// # Cost
 ///
 /// Exact lookup is one probe of the single bucket: `O(log n)` in a `BTreeMap`
-/// with cache-friendly nodes, where n is a route table — thousands at most.
+/// with cache-friendly nodes, where n is a route table, thousands at most.
 ///
 /// LPM is one probe per **populated prefix length**, longest first, so
 /// `O(d log n)` where `d` is the number of distinct lengths installed (at most
@@ -137,7 +137,7 @@ pub const MAX_MATCH_LEN: usize = 64;
 /// `buckets` is kept sorted by prefix descending on write, so the read path
 /// neither derives nor sorts anything.
 ///
-/// Neither path allocates. That is load-bearing rather than incidental — the
+/// Neither path allocates. That is load-bearing rather than incidental: the
 /// `ubpf` backend declares `AllocProfile::None` in `Backend::facts()`, and the
 /// only heap traffic a frame could cause is here.
 ///
@@ -200,7 +200,7 @@ impl Table {
     /// Install or replace an entry. `prefix` is ignored for an exact table.
     ///
     /// `O(log n)` plus, for a prefix length not yet present, an insertion into
-    /// `buckets` — `O(d)` to keep it sorted, with `d` at most 33.
+    /// `buckets`, which is `O(d)` to keep it sorted, with `d` at most 33.
     pub fn insert(&mut self, key: &[u8], prefix: u8, value: Bytes) {
         let (p, k) = self.canonical(key, prefix);
         // Descending by prefix, so the read path takes the first match.
@@ -291,7 +291,7 @@ impl Table {
     /// Longest-prefix search: probe each populated length, longest first.
     ///
     /// `buckets` is already in that order, so this is a walk, not a search for
-    /// where to start. The mask goes into a stack buffer — `MAX_MATCH_LEN` is
+    /// where to start. The mask goes into a stack buffer; `MAX_MATCH_LEN` is
     /// checked at construction, so the window always fits.
     fn longest_prefix(&self, key: &[u8]) -> Option<&Bytes> {
         let mut scratch = [0u8; MAX_MATCH_LEN];
@@ -360,7 +360,7 @@ mod tests {
     use super::*;
 
     /// `struct pipe_mac_dst_value { enum action; union { struct { uint16_t
-    /// port; } } }` — 4 bytes of discriminant, then the union, rounded to the
+    /// port; } } }`: 4 bytes of discriminant, then the union, rounded to the
     /// struct's alignment of 4. The generated header is the authority; this
     /// records what it says.
     #[test]

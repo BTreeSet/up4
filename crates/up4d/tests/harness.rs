@@ -246,7 +246,7 @@ impl Node {
     /// Send SIGTERM through `kill(1)` and wait for the exit code.
     ///
     /// The signal is sent by a child process rather than `libc::kill` because
-    /// `unsafe` is confined to `up4-io` (spec S1.7, A7) — including in tests.
+    /// `unsafe` is confined to `up4-io` (spec S1.7, A7), including in tests.
     pub fn terminate(mut self) -> std::process::ExitStatus {
         let status = Command::new("kill")
             .arg("-TERM")

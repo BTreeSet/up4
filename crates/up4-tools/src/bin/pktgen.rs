@@ -1,4 +1,4 @@
-//! `pktgen` — offered load, and what actually came back (spec S11.2).
+//! `pktgen`: offered load, and what actually came back (spec S11.2).
 //!
 //! The generator binds an address that must appear as a `peer` in the target
 //! node's topology; otherwise the node counts `rx_unknown_peer` and the run
@@ -55,7 +55,7 @@ struct Cli {
     #[arg(long, default_value_t = 64)]
     batch: usize,
 
-    /// Inner destination MAC — the key `l2fwd` matches on.
+    /// Inner destination MAC: the key `l2fwd` matches on.
     #[arg(long, default_value = "02:00:00:00:00:02")]
     dst_mac: String,
 
@@ -63,7 +63,7 @@ struct Cli {
     #[arg(long, default_value = "02:00:00:00:00:01")]
     src_mac: String,
 
-    /// Inner destination IPv4 — the route `l3fwd` matches on.
+    /// Inner destination IPv4: the route `l3fwd` matches on.
     #[arg(long, default_value = "10.0.2.1")]
     dst_ip: Ipv4Addr,
 

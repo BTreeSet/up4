@@ -29,7 +29,7 @@ source of truth for what the switch does.
 
 - **Three ways to run the same P4.** The P4 source in `p4/programs/` is the
   artifact of record, and three independent backends execute it behind one
-  `Pipeline`/`Engine` contract — pick one with `up4d --backend`. See
+  `Pipeline`/`Engine` contract; pick one with `up4d --backend`. See
   [Three backends, one program](#three-backends-one-program).
 - **Throughput that supports real measurements.** The I/O layer uses batched
   syscalls (`recvmmsg`) and UDP GSO/GRO through
@@ -42,7 +42,7 @@ source of truth for what the switch does.
 - **Verified behavior, not asserted behavior.** Every supported P4 program
   ships with a packet corpus whose expectations come from an independent
   model of the P4 source. CI replays it through **every backend** and diffs
-  verdicts and frame bytes — egress port, header rewrites, drops — masking
+  verdicts and frame bytes (egress port, header rewrites, drops), masking
   only the checksums up4 never computes. There is no exception list: a
   hand-rendering, `x4c`'s output, and `p4c`'s bytecode agree byte for byte on
   every case, or CI is red. A program without a corpus fails the build. (The
@@ -78,25 +78,26 @@ We would rather state limits than let you discover them.
 
 ## Three backends, one program
 
-up4 is named for uBPF's idea — the same programs, running where you have
+up4 is named for uBPF's idea: the same programs, running where you have
 permission. Making that true means more than one route from `.p4` to running
 code, so up4 ships three and lets you choose:
 
 | `--backend` | Where the code comes from | Allocates per frame | End-to-end throughput |
 | --- | --- | --- | --- |
-| `native` | Rust, hand-rendered from the SoftNPU source block for block | no | **856 kpps / 10.0 Gbps** — the default, and what the throughput runs use |
-| `ubpf` | `p4c --target ubpf` → BPF bytecode, run in-process on [rbpf](https://crates.io/crates/rbpf) | no | 229 kpps / 2.7 Gbps interpreted — full P4 expressiveness; JIT-compiled on x86-64 (D11) |
-| `x4c` | [x4c](https://github.com/oxidecomputer/p4) → Rust, committed under `crates/up4-x4c/src/generated/` | **yes** (D9) | 3.2 kpps / 38 Mbps — provenance, not transport |
+| `native` | Rust, hand-rendered from the SoftNPU source block for block | no | **856 kpps / 10.0 Gbps**, the default and what the throughput runs use |
+| `ubpf` | `p4c --target ubpf` → BPF bytecode, run in-process on [rbpf](https://crates.io/crates/rbpf) | no | 229 kpps / 2.7 Gbps interpreted, full P4 expressiveness; JIT-compiled on x86-64 (D11) |
+| `x4c` | [x4c](https://github.com/oxidecomputer/p4) → Rust, committed under `crates/up4-x4c/src/generated/` | **yes** (D9) | 3.2 kpps / 38 Mbps, provenance rather than transport |
 
 Loopback, one shard, `l3fwd` with 1000 routes at 1460 B, on a 4-core aarch64
-box. Real UDP sockets and a real kernel round trip, but `lo` — no NIC driver,
-no DMA, no wire — so treat the absolute figures as a bound on the harness, not
-a cluster result. The `ubpf` figure is the **interpreter**: this machine has no
+box. Real UDP sockets and a real kernel round trip, but `lo` has no NIC
+driver, no DMA, and no wire, so treat the absolute figures as a bound on the
+harness, not a cluster result. The `ubpf` figure is the **interpreter**: this machine has no
 JIT variant, and the JIT is the default on x86-64 but is not measured yet.
 
 Two things worth knowing before choosing. Per *frame* `ubpf` is 44× `native`,
-but end to end only 3.7× — every backend pays the same ~1.17 µs of socket path,
-which `native`'s 67 ns pipeline disappears into and `ubpf`'s 3 µs does not.
+but end to end only 3.7×, because every backend pays the same ~1.17 µs of
+socket path, which `native`'s 67 ns pipeline disappears into and `ubpf`'s 3 µs
+does not.
 And `x4c` is pipeline-bound to the point that frame size stops mattering: its
 LPM table is searched linearly, about 290 ns per installed route. Pick `x4c`
 when what matters is that a P4 compiler produced the Rust; it is checked
@@ -109,10 +110,10 @@ over `Program × Backend`, every backend of a program exposes the same tables to
 the same output bytes. The `.p4` is the artifact of record for all of them.
 
 What up4 refuses to claim: `native` is a *hand* rendering, so only the corpus
-ties it to the source — nothing mechanical does. `x4c` cannot compile
+ties it to the source; nothing mechanical does. `x4c` cannot compile
 `transition select`, which is why `l3fwd`'s ethertype demux sits in `apply` in
 the SoftNPU binding and in the parser in the uBPF one. Each backend reports
-what it actually is — provenance, allocation profile, execution mode — through
+what it actually is (provenance, allocation profile, execution mode) through
 `up4ctl info`, and the documentation quotes that rather than making claims of
 its own.
 
@@ -166,7 +167,7 @@ starts two `up4d` processes, installs routes, pushes traffic through both, and
 prints the counters. What it does by hand:
 
 ```sh
-# what this host will let up4 do — buffers, GRO/GSO, cgroup CPUs, route MTU
+# what this host will let up4 do: buffers, GRO/GSO, cgroup CPUs, route MTU
 ./probe --peer 10.0.0.12 --pretty
 
 # start a node; --tables installs routes before the datapath comes up
@@ -236,10 +237,10 @@ Working, tested on loopback, and green in CI:
 Outstanding:
 
 - [ ] The BMv2 half of the differential ([deviations D2](docs/deviations.md))
-- [ ] Measure the uBPF JIT on an x86-64 host — it is the default there and the
+- [ ] Measure the uBPF JIT on an x86-64 host; it is the default there and the
       corpus covers it, but no number has been taken
       ([deviations D11](docs/deviations.md))
-- [ ] Cluster validation A1–A7 on real NICs ([m6](docs/plan/m6-cluster-benches.md))
+- [ ] Cluster validation A1-A7 on real NICs ([m6](docs/plan/m6-cluster-benches.md))
 - [ ] *Post-v1 (out of scope for v1, spec S16):* optional per-port token
       bucket shaper, only if experiments need congestion signals to mean
       something

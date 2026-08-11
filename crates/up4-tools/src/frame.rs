@@ -1,7 +1,7 @@
 //! Synthetic inner frames (spec S11.2).
 //!
 //! One template, built once, with the per-flow fields patched in place. The
-//! frames are real Ethernet/IPv4/UDP so that a real P4 pipeline parses them —
+//! frames are real Ethernet/IPv4/UDP so that a real P4 pipeline parses them;
 //! a generator that emits noise would exercise the harness and nothing else.
 
 use std::net::Ipv4Addr;
@@ -21,11 +21,11 @@ pub const UDP_HDR_LEN: usize = 8;
 pub struct FrameSpec {
     /// Source MAC.
     pub src_mac: MacAddr,
-    /// Destination MAC — for `l2fwd`, the key the switch matches on.
+    /// Destination MAC: for `l2fwd`, the key the switch matches on.
     pub dst_mac: MacAddr,
     /// Source IPv4 address; flows vary its low octet.
     pub src_ip: Ipv4Addr,
-    /// Destination IPv4 address — for `l3fwd`, the route being exercised.
+    /// Destination IPv4 address: for `l3fwd`, the route being exercised.
     pub dst_ip: Ipv4Addr,
     /// UDP source port; flows vary it.
     pub src_port: u16,

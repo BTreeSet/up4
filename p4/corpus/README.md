@@ -26,7 +26,7 @@ python3 tools/corpus/gen_corpus.py --check    # verify (CI)
 
 Ultimately (spec S10): `tools/bmv2-diff/`, which replays the same cases through
 BMv2 and writes the expectations here. When it lands, the Rust side does not
-change — `crates/up4-engine/tests/conformance.rs` already reads this format.
+change; `crates/up4-engine/tests/conformance.rs` already reads this format.
 
 ## The mask
 
@@ -39,8 +39,8 @@ Before diffing frames, both sides zero **exactly** these fields:
 | UDP checksum | `eth(14) + ihl*4 + 6` |
 
 Nothing else is masked. up4 never computes or verifies an inner checksum
-(spec S1.5), so these fields carry no information; every other byte — TTL,
-addresses, payload — must match exactly.
+(spec S1.5), so these fields carry no information; every other byte (TTL,
+addresses, payload) must match exactly.
 
 The mask is implemented twice, once per language, because the two runners are
 independent by design. The implementations are `mask()` in

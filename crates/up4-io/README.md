@@ -4,7 +4,7 @@ The I/O shell (spec S6): sockets, the receive/transmit datapath, clocks,
 signals, the startup probe, and the punt queue.
 
 Every syscall in up4 is here, and so is every use of `unsafe` in the shipped
-switch — each site on the allowlist with the call it makes. Keeping the shell
+switch, each site on the allowlist with the call it makes. Keeping the shell
 thin and named is what lets everything above it be pure.
 
 Batched `recvmmsg` with GRO segment walking, GSO transmit, a preallocated arena,
