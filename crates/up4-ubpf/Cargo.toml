@@ -1,0 +1,13 @@
+[package]
+name = "up4-ubpf"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+# The `ubpf` backend: P4 compiled by p4c to uBPF bytecode, executed in process.
+# See README.md for why this is a crate of its own.
+
+[dependencies]
+up4-engine = { path = "../up4-engine" }
+rbpf = "0.4"
