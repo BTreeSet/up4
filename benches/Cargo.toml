@@ -11,6 +11,7 @@ description = "up4 benchmarks and the fast-path allocation guard (spec S13.4, S1
 up4-wire.workspace = true
 up4-config.workspace = true
 up4-engine = { workspace = true, features = ["oracle"] }
+up4-catalog = { workspace = true, features = ["oracle"] }
 up4-io = { workspace = true, features = ["oracle"] }
 up4-metrics.workspace = true
 quinn-udp.workspace = true

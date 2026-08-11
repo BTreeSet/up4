@@ -17,6 +17,9 @@ use up4_metrics::Metrics;
 use up4_wire::{Hdr, OVERLAY_HDR_LEN, Seq};
 
 /// The fabric's inner MTU for these runs.
+/// Program names a bench config may select.
+const PROGRAM_NAMES: [&str; 3] = ["l2fwd", "l3fwd", "null"];
+
 pub const INNER_MTU: usize = up4_wire::INNER_MTU_V4;
 
 /// A shard under test, with a peer socket on either side of it.
@@ -53,13 +56,14 @@ impl Fixture {
             ingress.local_addr().expect("bound"),
             egress.local_addr().expect("bound"),
         );
-        let config = Config::from_toml(&src, &up4_engine::names()).expect("bench config");
+        let config = Config::from_toml(&src, &PROGRAM_NAMES).expect("bench config");
         let topology: Arc<VportTable> = Arc::new(config.vports);
         let metrics = Arc::new(Metrics::new("bench", &topology));
 
-        let pipeline: Arc<dyn Pipeline> = Arc::from(
-            up4_engine::build(pipeline_name, &PipelineParams::new([0, 1])).expect("built"),
-        );
+        let pipeline: Arc<dyn Pipeline> = Arc::from(up4_catalog::build(
+            up4_engine::catalog::Selection::parse(pipeline_name, None).expect("known program"),
+            &PipelineParams::new([0, 1]),
+        ));
         setup(&*pipeline);
 
         let mut shard = Shard::new(

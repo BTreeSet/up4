@@ -31,6 +31,15 @@ pub struct Layout {
     pub action_at: usize,
     /// Byte offset of the action's parameter block within the value.
     pub params_at: usize,
+    /// The slice of the key image that participates in matching.
+    ///
+    /// p4c's LPM key is `{ uint32_t prefix_len0; uint32_t field; }` and the
+    /// generated code zero-initialises the struct and sets only the field —
+    /// the prefix length is the *host's* to supply, because the host does the
+    /// prefix search. So matching reads a window of the key, not all of it.
+    pub match_at: usize,
+    /// Width of that window.
+    pub match_len: usize,
 }
 
 /// Both shipped programs use the same shape: a single scalar key, a 4-byte
@@ -56,6 +65,29 @@ impl Layout {
             value: VALUE_PARAMS_AT + params.next_multiple_of(4),
             action_at: VALUE_ACTION_AT,
             params_at: VALUE_PARAMS_AT,
+            match_at: 0,
+            match_len: key,
+        }
+    }
+
+    /// A layout stated field by field, for a table whose value union forces
+    /// padding a formula would get wrong (l3fwd's `forward(bit<16>, bit<48>)`
+    /// aligns its union to 8).
+    #[must_use]
+    pub const fn explicit(
+        key: usize,
+        value: usize,
+        params_at: usize,
+        match_at: usize,
+        match_len: usize,
+    ) -> Self {
+        Self {
+            key,
+            value,
+            action_at: VALUE_ACTION_AT,
+            params_at,
+            match_at,
+            match_len,
         }
     }
 
@@ -171,9 +203,10 @@ impl Table {
     /// answered would make the miss path unreachable and `hit` always true.
     #[must_use]
     pub fn lookup(&self, key: &[u8]) -> Option<&[u8]> {
+        let w = self.window(key);
         let found = match self.matching {
-            Match::Exact => self.entries.get(&(0, key.to_vec())),
-            Match::Lpm => self.longest_prefix(key),
+            Match::Exact => self.entries.get(&(0, w.to_vec())),
+            Match::Lpm => self.longest_prefix(w),
         };
         found.or(self.default.as_ref()).map(Vec::as_slice)
     }
@@ -189,10 +222,17 @@ impl Table {
         })
     }
 
+    /// The window of a key image that matching reads.
+    fn window<'k>(&self, key: &'k [u8]) -> &'k [u8] {
+        let end = (self.layout.match_at + self.layout.match_len).min(key.len());
+        key.get(self.layout.match_at..end).unwrap_or(&[])
+    }
+
     fn canonical(&self, key: &[u8], prefix: u8) -> (u8, Bytes) {
+        let w = self.window(key);
         match self.matching {
-            Match::Exact => (0, key.to_vec()),
-            Match::Lpm => (prefix, mask(key, prefix)),
+            Match::Exact => (0, w.to_vec()),
+            Match::Lpm => (prefix, mask(w, prefix)),
         }
     }
 }

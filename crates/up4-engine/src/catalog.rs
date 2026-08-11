@@ -276,7 +276,12 @@ pub enum Selection {
     },
     /// The benchmark oracle (spec S7.4). Not a P4 program: it has no `.p4`
     /// source and no backend, which is exactly why it is not a [`Program`].
-    #[cfg(feature = "oracle")]
+    ///
+    /// Unconditional on purpose. Gating the variant on this crate's `oracle`
+    /// feature while another crate matches on it is a cfg mismatch that
+    /// workspace feature unification turns into a build failure; what the
+    /// feature governs is whether the oracle is *selectable*, which
+    /// [`Selection::parse`] decides.
     Oracle,
 }
 
@@ -326,8 +331,6 @@ impl Selection {
     /// Every selection this binary can load.
     #[must_use]
     pub fn all() -> Vec<Self> {
-        // `mut` is used only when the oracle feature adds a variant.
-        #[cfg_attr(not(feature = "oracle"), allow(unused_mut))]
         let mut out: Vec<Self> = Program::ALL
             .into_iter()
             .flat_map(|program| {
@@ -336,8 +339,9 @@ impl Selection {
                     .map(move |backend| Self::P4 { program, backend })
             })
             .collect();
-        #[cfg(feature = "oracle")]
-        out.push(Self::Oracle);
+        if cfg!(feature = "oracle") {
+            out.push(Self::Oracle);
+        }
         out
     }
 
@@ -349,8 +353,7 @@ impl Selection {
     /// # Errors
     /// [`SelectError`] naming the alternatives.
     pub fn parse(pipeline: &str, backend: Option<&str>) -> Result<Self, SelectError> {
-        #[cfg(feature = "oracle")]
-        if pipeline == "null" {
+        if cfg!(feature = "oracle") && pipeline == "null" {
             return match backend {
                 None => Ok(Self::Oracle),
                 Some(_) => Err(SelectError::BackendNotApplicable { pipeline: "null" }),
@@ -399,7 +402,6 @@ impl Selection {
                 program: Program::L3Fwd,
                 backend: Backend::Ubpf,
             } => "l3fwd/ubpf",
-            #[cfg(feature = "oracle")]
             Self::Oracle => "null",
         }
     }
@@ -409,7 +411,6 @@ impl Selection {
     pub const fn facts(self) -> BackendFacts {
         match self {
             Self::P4 { backend, .. } => backend.facts(),
-            #[cfg(feature = "oracle")]
             Self::Oracle => BackendFacts {
                 provenance: Provenance::HandRendered,
                 alloc: AllocProfile::None,

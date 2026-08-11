@@ -46,7 +46,10 @@ fn engines(c: &mut Criterion) {
     for size in [64usize, 1460] {
         group.throughput(Throughput::Bytes(size as u64));
 
-        let l2 = up4_engine::build("l2fwd", &PipelineParams::new([0, 1])).expect("built");
+        let l2 = up4_catalog::build(
+            up4_engine::catalog::Selection::parse("l2fwd", None).expect("known program"),
+            &PipelineParams::new([0, 1]),
+        );
         benches::loopback::install_fdb(&*l2);
         let mut l2_engine = l2.engine();
         let mut ring = Ring::new(size, 16);
@@ -55,7 +58,10 @@ fn engines(c: &mut Criterion) {
         });
 
         for routes in [1u32, 1000] {
-            let l3 = up4_engine::build("l3fwd", &PipelineParams::new([0, 1])).expect("built");
+            let l3 = up4_catalog::build(
+                up4_engine::catalog::Selection::parse("l3fwd", None).expect("known program"),
+                &PipelineParams::new([0, 1]),
+            );
             benches::loopback::install_routes(&*l3, routes);
             let mut l3_engine = l3.engine();
             let mut ring = Ring::new(size, 16);

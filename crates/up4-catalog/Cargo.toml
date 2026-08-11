@@ -1,0 +1,20 @@
+[package]
+name = "up4-catalog"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+# The one place every backend is named. See src/lib.rs.
+
+[dependencies]
+up4-engine.workspace = true
+up4-x4c.workspace = true
+up4-ubpf.workspace = true
+
+[features]
+oracle = ["up4-engine/oracle"]
+
+[dev-dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true

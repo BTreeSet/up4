@@ -44,8 +44,8 @@ use std::sync::Arc;
 
 use up4_engine::table::Shared;
 use up4_engine::{
-    ActionSchema, Engine, EntryDesc, FrameCtx, MIN_HEADROOM, Pipeline, PipelineParams, TableError,
-    TableOps, TableSchema, TypedKey, TypedVal, Verdict,
+    ActionSchema, Engine, EntryDesc, FrameCtx, Pipeline, PipelineParams, TableError, TableOps,
+    TableSchema, TypedKey, TypedVal, Verdict,
 };
 
 use crate::abi::{encode_key, encode_params};
@@ -71,6 +71,15 @@ struct Desc {
     ids: &'static [(&'static str, &'static str)],
     /// Construct a fresh pipeline with `radix` ports.
     new: fn(u16) -> Box<dyn p4rs::Pipeline>,
+    /// Bytes the program's parser extracts before it can accept.
+    ///
+    /// P4 says a parser that runs out of bytes rejects the packet. p4rs does
+    /// not implement that: `packet_in::extract` slices unconditionally and
+    /// **panics** on a short frame (`lang/p4rs/src/lib.rs`). up4 runs with
+    /// `panic = "abort"`, so the panic cannot be caught — a 13-byte frame
+    /// would take the switch down. Refusing the frame here restores the
+    /// semantics the source of record already specifies.
+    min_parse: usize,
 }
 
 const L2FWD: Desc = Desc {
@@ -78,6 +87,8 @@ const L2FWD: Desc = Desc {
     schemas: up4_engine::programs::l2fwd::SCHEMAS,
     ids: &[("mac_dst", "ingress.mac_dst")],
     new: |radix| Box::new(l2fwd::main_pipeline::new(radix)),
+    // ethernet_h
+    min_parse: 14,
 };
 
 const L3FWD: Desc = Desc {
@@ -85,6 +96,8 @@ const L3FWD: Desc = Desc {
     schemas: up4_engine::programs::l3fwd::SCHEMAS,
     ids: &[("ipv4_lpm", "ingress.ipv4_lpm")],
     new: |radix| Box::new(l3fwd::main_pipeline::new(radix)),
+    // ethernet_h + ipv4_h, both extracted unconditionally
+    min_parse: 34,
 };
 
 impl Desc {
@@ -482,6 +495,10 @@ impl Engine for X4cEngine {
 
 impl X4cEngine {
     fn run(&mut self, f: &mut FrameCtx<'_>) -> Verdict {
+        if f.len() < self.desc.min_parse {
+            // The parser would reject this; p4rs would panic instead.
+            return Verdict::Drop;
+        }
         // `packet_out` borrows the input, so the result cannot be written back
         // over the bytes it points at. Two reused buffers, no per-frame
         // allocation *here* — x4c's runtime allocates internally regardless.
@@ -516,14 +533,13 @@ impl X4cEngine {
         if matches!(verdict, Verdict::Drop | Verdict::Punt) {
             return verdict;
         }
-        // Write the deparsed frame back.
-        if self.scratch_out.len() > f.capacity() - MIN_HEADROOM {
-            return Verdict::Drop;
-        }
-        if f.set_len(self.scratch_out.len()).is_err() {
-            return Verdict::Drop;
-        }
-        f.frame_mut().copy_from_slice(&self.scratch_out);
+        // The frame's length is invariant: these programs deparse exactly the
+        // headers they parsed. `packet_out` reports header bytes and payload
+        // separately and the two do not always sum to the input length, so the
+        // input length is the authority — trusting the sum made a frame in a
+        // tight buffer look too long and turned every hit into a drop.
+        let len = f.len().min(self.scratch_out.len());
+        f.frame_mut()[..len].copy_from_slice(&self.scratch_out[..len]);
         verdict
     }
 }
@@ -532,6 +548,7 @@ impl X4cEngine {
 mod tests {
     use super::*;
     use std::net::Ipv4Addr;
+    use up4_engine::MIN_HEADROOM;
     use up4_engine::{MacAddr, ValKind};
 
     const DMAC: [u8; 6] = [0x02, 0, 0, 0, 0, 0x02];

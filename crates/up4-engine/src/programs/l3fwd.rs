@@ -39,7 +39,7 @@ use crate::{
 use std::{collections::BTreeMap, sync::Arc};
 
 /// Registered name.
-pub const NAME: &str = "l3fwd";
+pub const NAME: &str = "l3fwd/native";
 
 /// The table's control-plane contract.
 pub const SCHEMAS: &[TableSchema] = &[TableSchema {

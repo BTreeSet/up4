@@ -88,6 +88,7 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "quinn-udp",
+ "up4-catalog",
  "up4-config",
  "up4-engine",
  "up4-io",
@@ -1186,6 +1187,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
 
 [[package]]
+name = "up4-catalog"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "up4-engine",
+ "up4-ubpf",
+ "up4-x4c",
+]
+
+[[package]]
 name = "up4-config"
 version = "0.1.0"
 dependencies = [
@@ -1290,6 +1302,7 @@ dependencies = [
  "serde_json",
  "tracing",
  "tracing-subscriber",
+ "up4-catalog",
  "up4-config",
  "up4-ctl",
  "up4-engine",

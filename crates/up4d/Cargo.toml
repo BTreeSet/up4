@@ -10,6 +10,7 @@ description = "up4 node: an unprivileged userspace P4 switch"
 up4-wire.workspace = true
 up4-config.workspace = true
 up4-engine.workspace = true
+up4-catalog.workspace = true
 up4-io.workspace = true
 up4-ctl.workspace = true
 up4-metrics.workspace = true
@@ -24,4 +25,4 @@ up4-tools.workspace = true
 quinn-udp.workspace = true
 
 [features]
-oracle = ["up4-engine/oracle", "up4-io/oracle"]
+oracle = ["up4-engine/oracle", "up4-io/oracle", "up4-catalog/oracle"]

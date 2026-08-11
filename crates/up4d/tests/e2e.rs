@@ -561,7 +561,7 @@ fn info_reports_the_pipeline_topology_and_probe() {
         panic!("info replies with info");
     };
     assert_eq!(info.node, "a");
-    assert_eq!(info.pipeline, "l3fwd");
+    assert_eq!(info.pipeline, "l3fwd/native");
     assert_eq!(info.threads, 1);
     assert_eq!(info.inner_mtu, 1460);
     assert!(info.punt_enabled);

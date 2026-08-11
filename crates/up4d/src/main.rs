@@ -25,6 +25,7 @@ use std::{
 use tracing::{error, info, warn};
 use up4_config::{Config, LoadError};
 use up4_ctl::EntryBatch;
+use up4_engine::catalog::{Program, Selection};
 use up4_engine::{Pipeline, PipelineParams};
 use up4_io::{FabricSocket, PuntQueue, Shard, ShardParams, Stop, clock, probe::Probe};
 use up4_metrics::{Metrics, SnapshotWriter};
@@ -40,6 +41,14 @@ const EXIT_STARTUP: u8 = 2;
     max_term_width = 100
 )]
 struct Cli {
+    /// Which backend executes the configured pipeline.
+    ///
+    /// Omitted means `native`. The three are interchangeable: same `.p4`, same
+    /// tables, same `up4ctl` calls — they differ in provenance and cost, which
+    /// `up4ctl info` reports rather than this help text claiming.
+    #[arg(long, value_parser = ["native", "x4c", "ubpf"])]
+    backend: Option<String>,
+
     /// Path to the node's TOML configuration (spec S5).
     #[arg(long, short, env = "UP4_CONFIG")]
     config: PathBuf,
@@ -58,6 +67,19 @@ struct Cli {
     /// Validate the configuration and the table batch, then exit.
     #[arg(long)]
     check: bool,
+}
+
+/// One line describing what is loaded, for `up4ctl info`.
+fn selection_summary(name: &str) -> String {
+    Selection::all()
+        .into_iter()
+        .find(|s| s.name() == name)
+        .map_or_else(String::new, |s| match s {
+            Selection::P4 { program, backend } => {
+                format!("{} [{}]", program.summary(), backend.name())
+            }
+            Selection::Oracle => "benchmark oracle (spec S7.4)".to_owned(),
+        })
 }
 
 fn main() -> ExitCode {
@@ -110,7 +132,9 @@ fn run(cli: &Cli) -> Result<ExitCode, Fatal> {
         warn!("probe: {warning}");
     }
 
-    let registry = up4_engine::names();
+    // A configuration names a *program*; the backend is a separate axis with
+    // its own default (spec S7.2, `Selection`).
+    let registry: Vec<&str> = Program::ALL.iter().map(|p| p.name()).collect();
     let config = Config::load(&cli.config, &registry).map_err(|e| match e {
         LoadError::Io { .. } => Fatal(e.to_string()),
         // Every violation, not the first (spec S5).
@@ -118,19 +142,14 @@ fn run(cli: &Cli) -> Result<ExitCode, Fatal> {
     })?;
     echo_config(&config);
 
-    let pipeline: Arc<dyn Pipeline> = Arc::from(
-        up4_engine::build(
-            &config.node.pipeline,
-            &PipelineParams::new(config.vports.iter().map(|(_, v)| v.id.get())),
-        )
-        // Unreachable: `Config::load` validated the name against this registry.
-        .ok_or_else(|| {
-            Fatal(format!(
-                "pipeline {:?} vanished from the registry",
-                config.node.pipeline
-            ))
-        })?,
-    );
+    let selection = Selection::parse(&config.node.pipeline, cli.backend.as_deref())
+        .map_err(|e| Fatal(e.to_string()))?;
+    // Total: `Selection` is closed and every variant is implemented, so there
+    // is no "unknown pipeline" path left to handle here.
+    let pipeline: Arc<dyn Pipeline> = Arc::from(up4_catalog::build(
+        selection,
+        &PipelineParams::new(config.vports.iter().map(|(_, v)| v.id.get())),
+    ));
     info!(
         pipeline = pipeline.name(),
         tables = pipeline.tables().schemas().len(),
@@ -417,11 +436,7 @@ fn node_info(config: &Config, pipeline: &dyn Pipeline, probe: &Probe) -> up4_ctl
         node: config.node.id.clone(),
         version: env!("CARGO_PKG_VERSION").to_owned(),
         pipeline: pipeline.name().to_owned(),
-        pipeline_summary: up4_engine::registry()
-            .iter()
-            .find(|s| s.name == pipeline.name())
-            .map_or("", |s| s.summary)
-            .to_owned(),
+        pipeline_summary: selection_summary(pipeline.name()),
         uptime_s: 0,
         threads: config.node.threads.get(),
         fabric: config.node.fabric.as_str().to_owned(),

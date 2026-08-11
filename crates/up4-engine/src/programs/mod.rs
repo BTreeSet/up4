@@ -8,7 +8,6 @@
 
 pub mod l2fwd;
 pub mod l3fwd;
-#[cfg(feature = "oracle")]
 pub mod null;
 
 use crate::{

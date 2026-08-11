@@ -111,9 +111,9 @@ const ALLOWED: &[Exempt] = &[
     },
     Exempt {
         path: "crates/up4-ubpf/src/vm.rs",
-        sites: 4,
+        sites: 5,
         warrant: Warrant::VmBoundary,
-        why: "read a lookup key from, and write a value image into, memory the rbpf interpreter owns",
+        why: "read a lookup key from and write a value image into rbpf-owned memory; assert Send for a VM that lives on one shard thread",
     },
     Exempt {
         path: "benches/src/lib.rs",

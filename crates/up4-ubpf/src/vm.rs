@@ -54,6 +54,15 @@ pub mod meta {
     pub const SIZE: usize = 24;
 }
 
+/// Written into `output_port` before a run so a parser rejection is
+/// distinguishable from a forward.
+///
+/// p4c's `reject:` label returns 1 — the same value a passed frame returns —
+/// and it never touches `output_port`, so the return code alone cannot tell a
+/// refused parse from a forward to port 0. A value no action can produce makes
+/// the difference legible: still there afterwards means no action ran.
+pub const NO_PORT: u32 = u32::MAX;
+
 /// The largest value image a lookup can return. Both shipped programs use 8
 /// bytes; the margin costs nothing and is asserted against every layout.
 const ARENA: usize = 64;
@@ -203,6 +212,13 @@ pub struct Vm {
     arena: Vec<u8>,
 }
 
+// SAFETY: rbpf's VM holds a `dyn Any` for its JIT state, which is not `Send`.
+// A `Vm` is constructed by `Pipeline::engine` and moved onto exactly one shard
+// thread, where it stays for its life — up4's engines are never shared between
+// threads, which is the whole reason `Engine` takes `&mut self`. Nothing inside
+// is reachable from another thread, so moving one is sound.
+unsafe impl Send for Vm {}
+
 /// What one execution decided.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Outcome {
@@ -344,6 +360,7 @@ impl Vm {
             .copy_from_slice(&u32::from(ingress).to_le_bytes());
         self.meta[meta::PACKET_LENGTH..meta::PACKET_LENGTH + 4]
             .copy_from_slice(&len32.to_le_bytes());
+        self.meta[meta::OUTPUT_PORT..meta::OUTPUT_PORT + 4].copy_from_slice(&NO_PORT.to_le_bytes());
 
         // The mbuff carries the two pointers the prologue loads.
         let ctx_token = 1u64; // never dereferenced; helper 9 answers for it

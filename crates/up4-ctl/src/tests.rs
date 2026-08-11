@@ -26,10 +26,16 @@ peer = "127.0.0.1:7402"
 vport = 65535
 "#;
 
+/// The program names a config may name. This crate tests the control
+/// channel, not the catalogue, so the native `l3fwd` stands in for any
+/// pipeline.
+const PROGRAMS: [&str; 2] = ["l2fwd", "l3fwd"];
+
 fn context(punt: bool) -> Arc<Context> {
-    let cfg = Config::from_toml(CONFIG, &up4_engine::names()).expect("fixture config");
-    let pipeline: Arc<dyn Pipeline> =
-        Arc::from(up4_engine::build("l3fwd", &PipelineParams::new([0, 1])).expect("registered"));
+    let cfg = Config::from_toml(CONFIG, &PROGRAMS).expect("fixture config");
+    let pipeline: Arc<dyn Pipeline> = Arc::from(Box::new(up4_engine::programs::l3fwd::L3Fwd::new(
+        &PipelineParams::new([0, 1]),
+    )) as Box<dyn up4_engine::Pipeline>);
     let metrics = Arc::new(Metrics::new(&cfg.node.id, &cfg.vports));
     Arc::new(Context {
         info: Info {
@@ -277,7 +283,7 @@ fn punt_drain_on_a_node_without_punt_says_so() {
 fn a_pipeline_without_tables_refuses_table_commands_by_name() {
     let cfg = Config::from_toml(
         &CONFIG.replace("pipeline = \"l3fwd\"", "pipeline = \"l2fwd\""),
-        &up4_engine::names(),
+        &PROGRAMS,
     )
     .expect("fixture config");
     assert_eq!(cfg.node.pipeline, "l2fwd");
