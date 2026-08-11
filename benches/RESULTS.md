@@ -80,3 +80,33 @@ Both MTU-size figures clear the 812 kpps that A1 and A2 ask for on loopback
 `cargo test -p benches` pushes 20 480 frames through the full socket path with
 a counting global allocator installed and asserts **zero** allocations. It
 passes: after startup, up4's datapath does not allocate.
+
+---
+
+## 2026-08-11 (later) — after the three-backend re-architecture
+
+Same box. Re-measured because the pipeline layer changed shape: the name-based
+registry became `Program × Backend` and the constructor moved into
+`up4-catalog`. The question was whether the `native` backend paid for that.
+
+It did not. `engine_only`, per frame, median:
+
+| pipeline | 64 B | Δ | 1460 B | Δ |
+|---|---|---|---|---|
+| `l2fwd` | 37.9 ns | −4.9% | 71.5 ns | +2.4% |
+| `l3fwd`, 1 route | 30.8 ns | −0.9% | 62.7 ns | −1.5% |
+| `l3fwd`, 1000 routes | 34.4 ns | −0.7% | 69.1 ns | +0.3% |
+
+Every figure is within ±2.5% of the previous run and most moved the right way,
+which is what "no cost" looks like at this scale rather than an exactly equal
+number. The selection is resolved once at startup and the shard loop still
+holds a `Box<dyn Engine>` it calls directly, so there was no new indirection
+for the change to add.
+
+A thousand routes still cost **3.6 ns** more per frame than one (3.8 ns
+before): the prefix-length-grouped LPM continues to probe per distinct prefix
+length, not per route.
+
+The `x4c` and `ubpf` backends are not measured here yet. Both are correct
+against the shared corpus; neither has a number, and the honest thing is to
+leave that blank rather than quote a figure taken from a debug build.
