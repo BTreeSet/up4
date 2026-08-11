@@ -58,12 +58,18 @@ jobs:
       # GitHub's own guidance for read-only-cache triggers is the same shape:
       # let a `push` workflow do the saving and let everything else restore.
       #
-      # The key names the cargo profile whose artifacts the entry holds, and
-      # each job builds exactly one profile — `dev` here (`cargo test` and
-      # `cargo clippy` use the `test` profile, which inherits `dev`), `release`
-      # in the job below. Naming the key after the job instead would let a
-      # cache entry hold artifacts from a profile its key does not name, which
-      # is a state worth making unreachable rather than remembering.
+      # The key is *exactly* the name of the cargo profile whose artifacts the
+      # entry holds, and each job builds exactly one profile — `dev` here
+      # (`cargo test` and `cargo clippy` build with the `test` profile, which
+      # takes `dev`'s settings and so shares its artifacts), `release` in the
+      # job below.
+      #
+      # This is an invariant, not a convention: crates/up4d/tests/ci_cache_keys.rs
+      # fails the build if a key is not a declared profile, if a keyed job
+      # builds any other profile, or if a job with no build claims an entry.
+      # New profiles are the supported way to grow — declare `[profile.<name>]`
+      # in the workspace manifest and `<name>` becomes a legal key with no
+      # change to the test.
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: dev
@@ -137,14 +143,12 @@ jobs:
       # source that drifts into a dialect no compiler accepts fails here rather
       # than being discovered years later.
       #
-      # Its own cache key: this job builds x4c, not up4, so mixing its
-      # artifacts into the `dev` or `release` entries would put a profile's
-      # cache under a name that does not describe its contents.
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: x4c
-          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-
+      # Deliberately uncached. A cache key names the cargo profile whose
+      # artifacts the entry holds (see the `check` job), and this job compiles
+      # no up4 artifacts at all -- x4c is cloned and built outside the
+      # workspace, so `./target` stays empty. There is no profile here to name,
+      # so there is no entry to claim. crates/up4d/tests/ci_cache_keys.rs
+      # enforces that.
       - name: x4c type-checks the SoftNPU sources
         run: ./tools/p4/x4c.sh check
 
