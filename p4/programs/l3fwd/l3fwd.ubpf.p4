@@ -48,7 +48,7 @@ parser prs(
     packet_in pkt,
     out headers_t hdr,
     inout metadata_t meta,
-    inout standard_metadata std
+    inout standard_metadata std_meta
 ) {
     state start {
         pkt.extract(hdr.ethernet);
@@ -67,14 +67,14 @@ parser prs(
 control pipe(
     inout headers_t hdr,
     inout metadata_t meta,
-    inout standard_metadata std
+    inout standard_metadata std_meta
 ) {
     action drop() {
         mark_to_drop();
     }
 
     action punt() {
-        std.output_port = PUNT_PORT;
+        std_meta.output_port = PUNT_PORT;
         mark_to_pass();
     }
 
@@ -82,7 +82,7 @@ control pipe(
         hdr.ipv4.ttl = hdr.ipv4.ttl - 8w1;
         hdr.ethernet.dst = dmac;
         hdr.ipv4.hdr_checksum = 16w0;
-        std.output_port = (bit<32>)port;
+        std_meta.output_port = (bit<32>)port;
         mark_to_pass();
     }
 

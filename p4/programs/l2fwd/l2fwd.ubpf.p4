@@ -37,7 +37,7 @@ parser prs(
     packet_in pkt,
     out headers_t hdr,
     inout metadata_t meta,
-    inout standard_metadata std
+    inout standard_metadata std_meta
 ) {
     state start {
         pkt.extract(hdr.ethernet);
@@ -48,15 +48,15 @@ parser prs(
 control pipe(
     inout headers_t hdr,
     inout metadata_t meta,
-    inout standard_metadata std
+    inout standard_metadata std_meta
 ) {
     action forward(bit<16> port) {
-        std.output_port = (bit<32>)port;
+        std_meta.output_port = (bit<32>)port;
         mark_to_pass();
     }
 
     action broadcast() {
-        std.output_port = 32w65534;
+        std_meta.output_port = 32w65534;
         mark_to_pass();
     }
 
