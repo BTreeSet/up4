@@ -238,3 +238,47 @@ the pipeline is the parallel part, so a pipeline-bound backend should scale with
 cores in a way an I/O-bound one does not. That is a plausible mitigation for
 `ubpf`, not a measured one, and it is not claimed as a number anywhere.
 
+### What "end to end" does and does not cross
+
+Worth stating precisely, because the phrase invites more credit than the
+measurement has earned.
+
+**It does cross the kernel.** `FabricSocket` is an `AF_INET`/`SOCK_DGRAM`
+socket; sends and receives are `sendmmsg`/`recvmmsg` through quinn-udp, with
+UDP GSO on the way out and GRO on the way in. Every frame goes user → kernel →
+user twice. Nothing is short-circuited: the generator and the shard share a
+process in this bench, but they are two threads that communicate only through
+the socket layer, exactly as two `up4d` instances would. (`crates/up4d/tests/e2e.rs`
+does run two separate `up4d` *processes*, but as a correctness test, not a
+benchmark.)
+
+**It does not cross a network namespace, a driver, or a wire.** One namespace,
+`lo`, MTU 65536. So the path omits the NIC driver, DMA and PCIe, interrupt
+handling and coalescing, real 1500-byte segmentation, and any loss or
+reordering. On a real NIC the per-frame I/O cost will be different — and not
+obviously *higher*, since DMA moves bytes the loopback path memcpys. Which way
+it moves is what A1-A7 exist to find out (`docs/plan/m6-cluster-benches.md`);
+nothing here should be read as a cluster number.
+
+**Why the backend comparison survives that anyway.** The socket path is a
+common-mode term: all three backends pay it identically, so it adds to each
+frame budget rather than scaling it. `io_only` is the same path with the
+pipeline removed entirely, and at 1460 B it is indistinguishable from `native`
+carrying a full 1000-route `l3fwd`:
+
+| | per batch of 64 | per frame |
+|---|---|---|
+| `io_only`, no pipeline at all | 74.9 µs | 1.170 µs |
+| `e2e`, `native` + 1000-route `l3fwd` | 74.8 µs | 1.168 µs |
+
+The confidence intervals overlap almost completely. At MTU size up4's P4
+pipeline on `native` is **free** — the switch runs at the speed of its socket
+layer, and a faster pipeline could not make it quicker.
+
+That decomposition is what makes the rest transportable. Frame budget is
+`io + pipeline`; this box measures `io ≈ 1.17 µs` at 1460 B, and the per-frame
+pipeline costs are in the `backends` table. Anyone with a different `io` can
+substitute it and re-derive the split, including the share-of-budget argument
+about the uBPF JIT — which is 69% on loopback and would fall as `io` rises.
+The *structure* of that argument is robust; the specific percentage is not.
+

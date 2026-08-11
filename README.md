@@ -89,8 +89,10 @@ code, so up4 ships three and lets you choose:
 | `x4c` | [x4c](https://github.com/oxidecomputer/p4) → Rust, committed under `crates/up4-x4c/src/generated/` | **yes** (D9) | 3.2 kpps / 38 Mbps — provenance, not transport |
 
 Loopback, one shard, `l3fwd` with 1000 routes at 1460 B, on a 4-core aarch64
-box. The `ubpf` figure is the **interpreter**: this machine has no JIT variant,
-and the JIT is the default on x86-64 but is not measured yet.
+box. Real UDP sockets and a real kernel round trip, but `lo` — no NIC driver,
+no DMA, no wire — so treat the absolute figures as a bound on the harness, not
+a cluster result. The `ubpf` figure is the **interpreter**: this machine has no
+JIT variant, and the JIT is the default on x86-64 but is not measured yet.
 
 Two things worth knowing before choosing. Per *frame* `ubpf` is 44× `native`,
 but end to end only 3.7× — every backend pays the same ~1.17 µs of socket path,
