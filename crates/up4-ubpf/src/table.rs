@@ -98,13 +98,16 @@ pub struct Table {
     layout: Layout,
     /// Exact: key image → value image. LPM: (prefix_len, masked key) → value.
     entries: BTreeMap<(u8, Bytes), Bytes>,
-    default: Bytes,
+    default: Option<Bytes>,
 }
 
 impl Table {
-    /// An empty table whose misses return `default`.
+    /// An empty table. `default` is `Some` only for p4c's *defaultAction*
+    /// map, which is an array of one and always answers; an entry map must
+    /// return nothing on a miss, because that is the signal the generated code
+    /// uses to go and consult the default map.
     #[must_use]
-    pub fn new(matching: Match, layout: Layout, default: Bytes) -> Self {
+    pub fn new(matching: Match, layout: Layout, default: Option<Bytes>) -> Self {
         Self {
             matching,
             layout,
@@ -133,7 +136,7 @@ impl Table {
 
     /// Replace the miss value.
     pub fn set_default(&mut self, value: Bytes) {
-        self.default = value;
+        self.default = Some(value);
     }
 
     /// Every entry, in a deterministic order.
@@ -160,20 +163,19 @@ impl Table {
         n
     }
 
-    /// The value for `key`, or the miss value.
+    /// The value for `key`, if this table has one.
     ///
-    /// Total: a table always answers, because p4c's generated code falls back
-    /// to the default-action map on a miss and up4 gives that map a value at
-    /// construction.
+    /// `None` is meaningful rather than an absence to paper over: p4c's
+    /// generated code tests the returned pointer against NULL and consults the
+    /// table's default-action map when it is null. A table that always
+    /// answered would make the miss path unreachable and `hit` always true.
     #[must_use]
-    pub fn lookup(&self, key: &[u8]) -> &[u8] {
-        match self.matching {
-            Match::Exact => self
-                .entries
-                .get(&(0, key.to_vec()))
-                .unwrap_or(&self.default),
-            Match::Lpm => self.longest_prefix(key).unwrap_or(&self.default),
-        }
+    pub fn lookup(&self, key: &[u8]) -> Option<&[u8]> {
+        let found = match self.matching {
+            Match::Exact => self.entries.get(&(0, key.to_vec())),
+            Match::Lpm => self.longest_prefix(key),
+        };
+        found.or(self.default.as_ref()).map(Vec::as_slice)
     }
 
     /// Longest-prefix search: try each populated length, longest first.
@@ -251,15 +253,32 @@ mod tests {
     }
 
     #[test]
+    fn an_entry_map_returns_nothing_on_a_miss() {
+        // The signal the generated code needs: NULL sends it to the default
+        // map. A table that always answered would make that path unreachable.
+        let l = Layout::scalar(8, 2);
+        let t = Table::new(Match::Exact, l, None);
+        assert_eq!(t.lookup(&[1; 8]), None);
+    }
+
+    #[test]
     fn an_exact_table_answers_the_default_on_a_miss() {
         let l = Layout::scalar(8, 2);
-        let mut t = Table::new(Match::Exact, l, l.value(1, &[]));
-        assert_eq!(t.lookup(&[9; 8])[0], 1, "miss takes the default");
+        let mut t = Table::new(Match::Exact, l, Some(l.value(1, &[])));
+        assert_eq!(
+            t.lookup(&[9; 8]).expect("default")[0],
+            1,
+            "miss takes the default"
+        );
         t.insert(&[9; 8], 0, l.value(0, &3u16.to_le_bytes()));
-        assert_eq!(t.lookup(&[9; 8])[0], 0);
-        assert_eq!(&t.lookup(&[9; 8])[4..6], &3u16.to_le_bytes());
+        assert_eq!(t.lookup(&[9; 8]).expect("hit")[0], 0);
+        assert_eq!(&t.lookup(&[9; 8]).expect("hit")[4..6], &3u16.to_le_bytes());
         assert!(t.remove(&[9; 8], 0));
-        assert_eq!(t.lookup(&[9; 8])[0], 1, "removal restores the default");
+        assert_eq!(
+            t.lookup(&[9; 8]).expect("default")[0],
+            1,
+            "removal restores the default"
+        );
     }
 
     #[test]
@@ -275,26 +294,38 @@ mod tests {
     #[test]
     fn lpm_prefers_the_longest_match() {
         let l = Layout::scalar(4, 2);
-        let mut t = Table::new(Match::Lpm, l, l.value(2, &[]));
+        let mut t = Table::new(Match::Lpm, l, Some(l.value(2, &[])));
         let broad = 0x0a00_0000u32.to_le_bytes();
         let narrow = 0x0a01_0000u32.to_le_bytes();
         t.insert(&broad, 8, l.value(0, &1u16.to_le_bytes()));
         t.insert(&narrow, 16, l.value(0, &2u16.to_le_bytes()));
 
         let key = 0x0a01_0203u32.to_le_bytes();
-        assert_eq!(&t.lookup(&key)[4..6], &2u16.to_le_bytes(), "/16 wins");
+        assert_eq!(
+            &t.lookup(&key).expect("hit")[4..6],
+            &2u16.to_le_bytes(),
+            "/16 wins"
+        );
 
         let other = 0x0a02_0203u32.to_le_bytes();
-        assert_eq!(&t.lookup(&other)[4..6], &1u16.to_le_bytes(), "/8 covers it");
+        assert_eq!(
+            &t.lookup(&other).expect("hit")[4..6],
+            &1u16.to_le_bytes(),
+            "/8 covers it"
+        );
 
         let miss = 0x0b01_0203u32.to_le_bytes();
-        assert_eq!(t.lookup(&miss)[0], 2, "outside every prefix: default");
+        assert_eq!(
+            t.lookup(&miss).expect("default")[0],
+            2,
+            "outside every prefix: default"
+        );
     }
 
     #[test]
     fn clearing_reports_what_it_removed() {
         let l = Layout::scalar(8, 2);
-        let mut t = Table::new(Match::Exact, l, l.value(1, &[]));
+        let mut t = Table::new(Match::Exact, l, Some(l.value(1, &[])));
         for i in 0..5u8 {
             t.insert(&[i; 8], 0, l.value(0, &[0, 0]));
         }

@@ -39,6 +39,11 @@ enum Warrant {
     /// regenerate-and-diff check — so the `unsafe` it contains is the
     /// upstream compiler's, reviewed once at the seam rather than per line.
     Generated,
+    /// Crossing into memory a bytecode VM owns. rbpf helpers are bare
+    /// function pointers with no context and no borrow of VM memory, so a
+    /// lookup key arrives as a raw address and a value must be written back to
+    /// one. Confined to the crate whose name says it hosts a VM.
+    VmBoundary,
     /// Benchmark scaffolding outside `crates/`, which is not part of the
     /// shipped switch. Today: the counting global allocator that proves the
     /// fast path allocates nothing (spec S13.5).
@@ -55,6 +60,7 @@ impl Warrant {
         match self {
             Self::SyscallPlumbing => path.starts_with("crates/up4-io/"),
             Self::Generated => path.contains("/src/generated/"),
+            Self::VmBoundary => path.starts_with("crates/up4-ubpf/"),
             Self::BenchHarness => !path.starts_with("crates/"),
         }
     }
@@ -63,6 +69,7 @@ impl Warrant {
         match self {
             Self::SyscallPlumbing => "syscall plumbing (must live under crates/up4-io/)",
             Self::Generated => "generated code (must live under a src/generated/ directory)",
+            Self::VmBoundary => "VM memory boundary (must live under crates/up4-ubpf/)",
             Self::BenchHarness => "bench scaffolding (must live outside crates/)",
         }
     }
@@ -101,6 +108,12 @@ const ALLOWED: &[Exempt] = &[
         sites: 3,
         warrant: Warrant::SyscallPlumbing,
         why: "uname(2) and getsockopt(2) readback for the startup banner (spec S11.1)",
+    },
+    Exempt {
+        path: "crates/up4-ubpf/src/vm.rs",
+        sites: 4,
+        warrant: Warrant::VmBoundary,
+        why: "read a lookup key from, and write a value image into, memory the rbpf interpreter owns",
     },
     Exempt {
         path: "benches/src/lib.rs",

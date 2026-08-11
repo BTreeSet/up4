@@ -4,3 +4,4 @@
 
 pub mod elf;
 pub mod table;
+pub mod vm;
