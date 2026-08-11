@@ -108,6 +108,9 @@ pub struct NodeSpec<'a> {
     pub metrics_interval_s: u64,
     /// Entries to install before the datapath starts, as a JSON batch.
     pub tables: Option<String>,
+    /// `--backend`, or `None` for the default. A *program* is configured in
+    /// the TOML; the backend that executes it is a separate axis.
+    pub backend: Option<&'a str>,
 }
 
 impl NodeSpec<'_> {
@@ -153,6 +156,9 @@ impl Node {
         if let Some(tables) = &spec.tables {
             let path = dir.write(&format!("{}-tables.json", spec.id), tables);
             command.arg("--tables").arg(path);
+        }
+        if let Some(backend) = spec.backend {
+            command.arg("--backend").arg(backend);
         }
         let child = command.spawn().expect("spawn up4d");
         let node = Self {

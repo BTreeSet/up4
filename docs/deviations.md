@@ -5,38 +5,39 @@ departs from it, the departure is listed here with its reason. Nothing in this
 file overrides the spec; it records where reality and the document disagree and
 what was done about it.
 
-## D1 — Pipelines are hand-rendered from the P4 source, not x4c-generated
+## D1 — Three backends, and generation is `cargo xtask`, not `build.rs`
 
 **Spec:** S7.2 — `build.rs` runs a pinned `x4c` over `p4/programs/*.p4` and the
 adapter maps the generated `Pipeline` onto `Engine`.
 
-**Here:** `p4/programs/l2fwd/l2fwd.p4` and `l3fwd.p4` are the artifacts of
-record (spec P1), and `crates/up4-engine/src/programs/{l2fwd,l3fwd}.rs` are
-direct renderings of them — parser, ingress control, table application and
-deparse-time fix-ups, block for block, with the correspondence written into
-each module's doc comment. The two contracts x4c-generated code would plug
-into (`Engine`, `Pipeline`) are exactly the ones the renderings implement.
+**Here:** the `.p4` sources are the artifacts of record (spec P1) and three
+backends execute them, all behind the same `Engine`/`Pipeline` contracts and
+all selectable at configuration time (`up4_engine::catalog::Selection`):
 
-**Why:** the MVP's job is to show that P4 semantics over UDP forwards packets
-unprivileged at line rate. Adding a large external compiler to the build — one
-whose generated-code ABI is not pinned here and whose availability in CI is not
-guaranteed — buys nothing toward that and risks the whole thing.
+| Backend | Where its code comes from |
+| --- | --- |
+| `native` | Hand-rendered Rust, block for block from the SoftNPU source |
+| `x4c` | `x4c` output, committed under `crates/up4-x4c/src/generated/` |
+| `ubpf` | `p4c --target ubpf` output, compiled to a BPF object and committed under `crates/up4-ubpf/src/generated/` |
 
-**What keeps this a seam rather than a fork:**
+Generation is a `cargo xtask` target, not `build.rs`, and its output is checked
+in rather than produced during the build.
 
-- `crates/up4-engine/src/x4c.rs` holds the adapter's contract: the byte-level
-  key and parameter ABI with the fixed-vector tests spec S13.1 asks for, the
-  egress-metadata-to-verdict mapping, and the record of the upstream
-  endianness contradiction.
-- `x4c::refuse_reason` implements S7.2's compile-time refusal (queue-depth and
-  meter intrinsics) and is applied to the checked-in `.p4` sources by a test,
-  ready to be called from `build.rs`.
-- The conformance corpora (S10) diff the *renderings* against an independent
-  model of the P4 source, so a rendering that drifts from its program fails.
+**Why not `build.rs`:** both compilers are large native builds — p4c needs
+bison, flex, boost and a C++ toolchain — and a `build.rs` that shells out to
+them makes every `cargo build`, on every machine and every CI job, depend on
+provisioning them. Committing the output instead means the normal build needs
+nothing but `cargo`, and the compilers are needed only when a `.p4` changes.
 
-**To close it:** add the `build.rs` step, emit into `src/gen/`, implement the
-adapter against `x4c.rs`'s ABI, and delete the rendering modules. The corpora,
-the registry, the shim, and every test above them stay as they are.
+**What keeps the committed output honest:** `cargo xtask audit` hashes every
+`.p4` against `p4/generated.lock` and fails if a source moved without its
+artifacts (97 ms, no compiler, runs on every CI job); `cargo xtask verify`
+rebuilds both compilers in a self-contained userspace toolchain and diffs the
+result (weekly, and on demand). See `xtask/README.md`.
+
+**Why `native` still exists:** it is the only backend with no per-frame
+allocation (D9) and the one the throughput acceptance runs against. Keeping it
+also makes the conformance corpus a three-way check rather than a two-way one.
 
 ## D2 — The BMv2 differential runner is not wired
 
@@ -44,15 +45,18 @@ the registry, the shim, and every test above them stay as they are.
 container and writes the expectations file.
 
 **Here:** `tools/corpus/gen_corpus.py` produces the expectations from an
-independent model of the P4 source, and `conformance.rs` diffs against them
-bit-for-bit post-masking. The corpus format, the mask list, and the Rust runner
-are already what S10 specifies, so the BMv2 runner replaces one producer of
-`cases.json` and nothing else.
+independent model of the P4 source, and
+`crates/up4-catalog/tests/conformance.rs` diffs against them bit-for-bit
+post-masking — for **every** backend, not just one.
 
-**Why:** BMv2 is a container-sized dependency for a milestone (M4) that this
-build reaches by a different route. The property under test — "the Rust
-pipeline agrees with an independent reading of the P4" — is tested today;
-"independent" is simply weaker than "another implementation of P4".
+**Why:** BMv2 is a container-sized dependency. What S10 wants from it is
+independent confirmation that up4 reads the `.p4` correctly, and the three
+backends now supply a good deal of that on their own: two of them are the
+output of real P4 compilers, sharing no code with the renderings or with each
+other (and, in the uBPF case, not even a language). A misreading of the source
+has to be made identically by a hand-rendering, by `x4c`, and by `p4c` to go
+unnoticed. That is weaker than BMv2 — all three could inherit a misreading of
+the *spec* — but it is much stronger than one implementation against one model.
 
 ## D3 — `FrameCtx` fields are accessors, not `pub`
 
@@ -122,3 +126,133 @@ non-blocking without a readiness wait makes the loop a busy spin, which S6.3
 forbids and which measurably starves the receivers this node is feeding.
 Waiting on readiness and then asking for what has arrived is what a blocking
 socket was wanted for; there is still no reactor, no runtime, and no callback.
+
+## D8 — `up4-x4c` depends on `p4rs` by git revision
+
+**Spec:** S1.3 — dependencies are published crates at pinned versions.
+
+**Here:** `crates/up4-x4c/Cargo.toml` takes `p4rs` from
+`github.com/oxidecomputer/p4` at rev `e29b7953`. It is not published to
+crates.io.
+
+**Why:** `p4rs` is x4c's runtime library — the generated code calls into it —
+so the only correct version is the one matching the compiler that produced the
+code. `xtask/src/tool.rs` pins the same revision for the compiler, and the two
+pins are meant to be read and moved together. A published version would not
+help even if one existed: it would still have to match the compiler rev.
+
+**Contained by:** the dependency is confined to `up4-x4c`. Nothing else in the
+workspace links `p4rs`, so `native` and `ubpf` are unaffected by it, and a
+build that selects neither still resolves it only because Cargo resolves the
+whole workspace.
+
+## D9 — The `x4c` backend allocates per frame
+
+**Spec:** S13.5 — the fast path performs no heap allocation, proven by a
+counting allocator.
+
+**Here:** true of `native` and `ubpf`; **not** true of `x4c`, which is
+declared as `AllocProfile::PerFrame` in `Backend::facts()` and reported by
+`up4ctl info`.
+
+**Why:** x4c's runtime models every header field as a heap `BitVec` and its
+generated pipeline returns a `Vec` of outputs per packet. That is upstream's
+ABI, not a choice this repository makes; honouring it is what "true P4, by a
+real P4 compiler" costs here.
+
+**Why it is declared rather than fixed:** rewriting it means forking x4c's code
+generator. The alternative — quietly letting S13.5's claim become false for one
+backend — is worse than saying so in the type. The allocation guard therefore
+runs against the backends that claim `AllocProfile::None`, and the claim is
+per-backend rather than global.
+
+## D10 — Ingress admission refuses frames the `.p4` would forward
+
+**Spec:** P1 — the `.p4` source is the artifact of record; a backend's
+behaviour is the program's behaviour.
+
+**Here:** `up4_engine::admission::Admission` runs before the program. `l3fwd`
+declares `CoherentIpv4`, which refuses a frame announcing `ethertype == 0x0800`
+whose IPv4 header contradicts itself: a version other than 4, or a header
+length below the legal minimum or past the captured bytes. Neither
+`l3fwd.softnpu.p4` nor `l3fwd.ubpf.p4` contains such a check, so all three
+backends refuse strictly more than the source says.
+
+**Why:** a P4 parser rejects when `extract` runs out of bytes and for no other
+reason — it never checks that the bytes it took agree with each other. A router
+acts on that header, and a well-formed packet never reaches the check, so
+refusing at ingress is cheaper than carrying a self-contradictory header
+through a table lookup and a rewrite. It also cannot be written in the source:
+`x4c` compiles no construct that would express it.
+
+**Why it is not in a backend:** three renderings of one program that refuse
+different frames are three programs. `Admission` is declared on the `Program`
+and composed with whichever backend runs it —
+`up4(program) = admit(program) ; p4(program)` — so the deviation is one
+statement in one place, applied uniformly. `l2fwd` declares `Everything`: a
+bridge forwards on MAC addresses and has no opinion about the payload.
+
+**What holds it:** `admission_binds_every_backend_of_a_program` walks all 256
+values of the IPv4 version/IHL byte against all three backends;
+`fusion_is_sound_for_every_version_and_ihl` proves the `native` parser computes
+the check itself, which is why `build` does not wrap it twice.
+
+## D11 — The `ubpf` backend interprets; rbpf's JIT is not adopted
+
+**Spec:** none — this records a gap between up4's stated JIT policy and what
+ships.
+
+**Here:** `ExecMode::preferred()` states the policy (JIT wherever the target
+architecture has one, and the variant does not exist where it does not).
+`ExecMode::SHIPPED` is `Interpreted`, and that is what `Backend::facts()`
+reports and `up4ctl info` prints. `Vm::mode()` answers for the VM that is
+actually running and `reported_mode_is_the_mode_that_runs` asserts the two
+agree for every shipped program.
+
+**Why not adopt it:** rbpf's JIT performs **no runtime memory checking** —
+`register_allowed_memory`, which bounds every access the interpreter makes into
+the VM's buffers, is an interpreter feature and the JIT ignores it. up4's VM
+boundary justifies its `unsafe` partly on that bound. Adopting the JIT trades
+it for speed, on bytecode derived from packets this switch does not trust.
+Two further facts make it a decision rather than a default: rbpf's JIT emits
+x86-64 machine code into a single 4 KiB page (`l3fwd` is 229 instructions and
+compiles, with no margin stated upstream), and an overflow is a panic, which
+under `panic = "abort"` ends the process.
+
+**To close it:** measure it on an x86-64 host, decide whether the speed is
+worth the lost bound, and if so implement `Vm::new` under
+`#[cfg(target_arch = "x86_64")]` with the corpus running in both modes. Moving
+`SHIPPED` without doing the work fails CI, which is the point of the constant.
+
+## D12 — `x4c` tables have no default-action setter
+
+**Spec:** S8.2 — `table default` sets a table's miss action.
+
+**Here:** the `x4c` backend answers
+`TableError::Unsupported { table, reason }`. `native` and `ubpf` implement it.
+
+**Why:** x4c's generated table type exposes entry insertion and removal and
+nothing else; the default action is fixed by `default_action =` in the source.
+A backend that silently ignored the call, or one that faked it by inserting a
+catch-all entry, would report success for something that did not happen.
+`Unsupported` is a variant of the error the control plane already handles, so
+`up4ctl` prints the reason and exits non-zero.
+
+## D13 — The `x4c` adapter guards a short-frame panic in `p4rs`
+
+**Spec:** P1 — a P4 parser that runs out of bytes rejects the packet.
+
+**Here:** `p4rs`'s `packet_in::extract` slices unconditionally, so extracting a
+14-byte Ethernet header from a 13-byte frame panics
+(`range end index 14 out of range`) rather than rejecting. Under
+`panic = "abort"` that ends the process — a remotely reachable one, from one
+short packet. `crates/up4-x4c/src/pipeline.rs` therefore carries a per-program
+`min_parse` (14 for `l2fwd`, 34 for `l3fwd`) and drops a shorter frame before
+calling in.
+
+**Why here and not upstream:** the guard restores exactly the semantics the
+source already specifies, so it changes no accepted frame — the conformance
+corpus covers both truncation cases on all three backends. It is a workaround
+for an upstream defect, not a behaviour of up4's, and should be deleted if
+`p4rs` starts rejecting instead of panicking.
+

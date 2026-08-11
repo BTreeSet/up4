@@ -12,8 +12,8 @@
 
 use serde::Deserialize;
 use std::{collections::BTreeMap, path::PathBuf};
-use up4_engine::admission::Admission;
 use up4_engine::catalog::{Backend, Program, Selection};
+use up4_engine::envelope::Envelope;
 use up4_engine::{
     Engine, FrameCtx, Pipeline, PipelineParams, TypedKey, TypedVal, Verdict,
     headers::{ETH_HDR_LEN, ETHERTYPE_IPV4, IP_PROTO_TCP, IP_PROTO_UDP, IPV4_MIN_HDR_LEN},
@@ -244,7 +244,8 @@ fn l3fwd_matches_its_corpus() {
 }
 
 /// The composition law, checked independently of the corpus: whatever a
-/// program's [`Admission`] refuses, *every* backend of that program refuses.
+/// program's envelope refuses at ingress, *every* backend of that program
+/// refuses.
 ///
 /// The corpus already covers three such frames, but only the ones someone
 /// thought to write down. This walks the whole domain the check inspects —
@@ -256,8 +257,8 @@ fn l3fwd_matches_its_corpus() {
 fn admission_binds_every_backend_of_a_program() {
     let params = PipelineParams::new([0, 1, 2, 3]);
     for program in Program::ALL {
-        let admission = program.admission();
-        if admission == Admission::Everything {
+        let envelope = program.envelope();
+        if envelope == Envelope::IDENTITY {
             continue;
         }
         let batch: Batch = read(&corpus_dir(program.name()).join("tables.json"));
@@ -267,7 +268,7 @@ fn admission_binds_every_backend_of_a_program() {
             let mut engine = pipeline.engine();
             for byte in 0..=u8::MAX {
                 let mut frame = ipv4_frame(byte);
-                if admission.admits(&frame) {
+                if envelope.admit.admits(&frame) {
                     continue;
                 }
                 let mut buf = vec![0u8; HEADROOM + frame.len()];

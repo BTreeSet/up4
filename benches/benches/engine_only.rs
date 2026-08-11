@@ -5,41 +5,9 @@
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
-use up4_engine::{Engine, FrameCtx, PipelineParams, Verdict};
+use up4_engine::PipelineParams;
 
-const HEADROOM: usize = 64;
-
-/// A ring of frames spread over `flows` destinations, plus the scratch buffer
-/// the harness would hand the pipeline.
-struct Ring {
-    frames: Vec<Vec<u8>>,
-    buf: Vec<u8>,
-    next: usize,
-}
-
-impl Ring {
-    fn new(len: usize, flows: u32) -> Self {
-        let frames: Vec<Vec<u8>> = (0..flows)
-            .map(|i| {
-                let addr = std::net::Ipv4Addr::from(0x0a00_0000 | (i << 8) | 9);
-                benches::loopback::frame(len, addr.octets())
-            })
-            .collect();
-        Self {
-            buf: vec![0u8; HEADROOM + len.max(60)],
-            frames,
-            next: 0,
-        }
-    }
-
-    fn process(&mut self, engine: &mut dyn Engine) -> Verdict {
-        let frame = &self.frames[self.next % self.frames.len()];
-        self.next += 1;
-        self.buf[HEADROOM..HEADROOM + frame.len()].copy_from_slice(frame);
-        let mut ctx = FrameCtx::new(&mut self.buf, HEADROOM, frame.len(), 0, 0).expect("fits");
-        engine.process(&mut ctx)
-    }
-}
+use benches::loopback::Ring;
 
 fn engines(c: &mut Criterion) {
     let mut group = c.benchmark_group("engine_only");

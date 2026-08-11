@@ -56,6 +56,13 @@ struct Fabric {
 
 impl Fabric {
     fn start(tag: &str, punt: bool, metrics_interval_s: u64) -> Self {
+        Self::start_on(tag, punt, metrics_interval_s, None)
+    }
+
+    /// The same fabric with both nodes running `backend`. A *program* is
+    /// configured; which backend executes it is a separate axis, so this
+    /// changes nothing else about the topology, the routes, or the traffic.
+    fn start_on(tag: &str, punt: bool, metrics_interval_s: u64, backend: Option<&str>) -> Self {
         let guard = harness::exclusive();
         let dir = TempDir::new(tag);
         let mut ports = Ports::reserve(4);
@@ -74,6 +81,7 @@ impl Fabric {
                 // From A: subnet 2 is out vport 1 (toward B), subnet 1 is out
                 // vport 0 (toward the generator).
                 tables: Some(routes(1, 0)),
+                backend,
             },
         );
         let b = Node::start(
@@ -88,6 +96,7 @@ impl Fabric {
                 // From B: subnet 2 is out vport 0 (toward its generator),
                 // subnet 1 is out vport 1 (toward A).
                 tables: Some(routes(0, 1)),
+                backend,
             },
         );
         Self {
@@ -222,7 +231,29 @@ fn two_routers_carry_two_generators_in_both_directions() {
 #[test]
 fn one_frame_crosses_both_routers_with_the_pipeline_s_edits_applied() {
     let fabric = Fabric::start("single", false, 0);
+    let (sent, got) = cross(&fabric);
+    assert_edits(&sent, &got);
+}
 
+/// The same frame through the same two routers, on each *compiled* backend.
+///
+/// The conformance corpus already holds all three backends to the same
+/// verdicts and bytes, but it calls `Engine::process` directly. This is the
+/// rest of the claim: a backend is interchangeable only if the whole datapath
+/// — config, control channel, shard threads, sockets, GRO/GSO — works with it,
+/// and that is not something a corpus can show.
+#[test]
+fn every_backend_forwards_across_both_routers() {
+    for backend in ["x4c", "ubpf"] {
+        let fabric = Fabric::start_on(&format!("backend-{backend}"), false, 0, Some(backend));
+        let (sent, got) = cross(&fabric);
+        assert_edits(&sent, &got);
+    }
+}
+
+/// Push one frame in at pktgen A's socket and take it out at pktgen B's,
+/// returning what was sent and what arrived.
+fn cross(fabric: &Fabric) -> (Vec<u8>, Vec<u8>) {
     // Stand in for the generators with plain sockets, so the frame's bytes are
     // checked rather than counted.
     let west = FabricSocket::bind(fabric.pa, false).expect("bind west");
@@ -277,14 +308,19 @@ fn one_frame_crosses_both_routers_with_the_pipeline_s_edits_applied() {
         )
     });
 
+    (sent, got)
+}
+
+/// What `l3fwd` must have done to the frame, whichever backend ran it.
+fn assert_edits(sent: &[u8], got: &[u8]) {
     assert_eq!(got.len(), sent.len(), "length is preserved end to end");
-    let before = Ipv4::parse(&sent, ETH_HDR_LEN).expect("ipv4");
-    let after = Ipv4::parse(&got, ETH_HDR_LEN).expect("ipv4");
+    let before = Ipv4::parse(sent, ETH_HDR_LEN).expect("ipv4");
+    let after = Ipv4::parse(got, ETH_HDR_LEN).expect("ipv4");
     assert_eq!(after.ttl, before.ttl - 2, "one decrement per router");
     assert_eq!(after.src, before.src);
     assert_eq!(after.dst, before.dst);
     assert_eq!(
-        Ethernet::parse(&got).expect("ethernet").dst.to_string(),
+        Ethernet::parse(got).expect("ethernet").dst.to_string(),
         "02:00:00:00:00:02",
         "each hop rewrote the destination MAC from its route"
     );
@@ -293,6 +329,9 @@ fn one_frame_crosses_both_routers_with_the_pipeline_s_edits_applied() {
         &[0, 0],
         "the IPv4 checksum is zero-filled, never recomputed"
     );
+    // The program's deparser cannot write this one: the transport header is
+    // bytes it never parsed. It is the envelope's `Scrub`, so every backend
+    // owes it (spec S1.5).
     assert_eq!(&got[40..42], &[0, 0], "and so is the UDP checksum");
     assert_eq!(
         &got[ETH_HDR_LEN + 20 + 8..],

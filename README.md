@@ -27,15 +27,10 @@ source of truth for what the switch does.
 
 ## What you get
 
-- **A real P4 toolchain.** The P4 source in `p4/programs/` is the artifact of
-  record, and a pipeline is a `Pipeline`/`Engine` implementation of it: a
-  parser, match-action tables with typed keys and closed action sets, and a
-  deparser. Today those implementations are rendered from the P4 by hand and
-  checked against it by a differential corpus; the seam for
-  [x4c](https://github.com/oxidecomputer/p4)-generated code — including its
-  byte-level control-plane ABI — is in `up4-engine/src/x4c.rs`. See
-  [docs/deviations.md](docs/deviations.md) D1. A p4c-ubpf backend behind the
-  same engine trait is sketched as a fallback.
+- **Three ways to run the same P4.** The P4 source in `p4/programs/` is the
+  artifact of record, and three independent backends execute it behind one
+  `Pipeline`/`Engine` contract — pick one with `up4d --backend`. See
+  [Three backends, one program](#three-backends-one-program).
 - **Throughput that supports real measurements.** The I/O layer uses batched
   syscalls (`recvmmsg`) and UDP GSO/GRO through
   [quinn-udp](https://crates.io/crates/quinn-udp), the same code path that
@@ -45,10 +40,12 @@ source of truth for what the switch does.
   Numbers and machine: [benches/RESULTS.md](benches/RESULTS.md).
 - **Verified behavior, not asserted behavior.** Every supported P4 program
   ships with a packet corpus whose expectations come from an independent
-  model of the P4 source. CI replays it through the pipeline and diffs
+  model of the P4 source. CI replays it through **every backend** and diffs
   verdicts and frame bytes — egress port, header rewrites, drops — masking
-  only the checksums up4 never computes. A program without a corpus fails the
-  build. (The BMv2 half of the differential is not wired yet:
+  only the checksums up4 never computes. There is no exception list: a
+  hand-rendering, `x4c`'s output, and `p4c`'s bytecode agree byte for byte on
+  every case, or CI is red. A program without a corpus fails the build. (The
+  BMv2 half of the differential is not wired yet:
   [docs/deviations.md](docs/deviations.md) D2.)
 - **Honest counters.** Per-port packet, byte, and drop counters, sequence
   gap detection for overlay loss, and GRO batch histograms, so an experiment
@@ -78,12 +75,38 @@ We would rather state limits than let you discover them.
 - **No confidentiality.** The overlay is plaintext UDP on a trusted lab
   segment.
 
+## Three backends, one program
+
+up4 is named for uBPF's idea — the same programs, running where you have
+permission. Making that true means more than one route from `.p4` to running
+code, so up4 ships three and lets you choose:
+
+| `--backend` | Where the code comes from | Allocates per frame | Notes |
+| --- | --- | --- | --- |
+| `native` | Rust, hand-rendered from the SoftNPU source block for block | no | the default; the fastest, and the one the throughput runs use |
+| `x4c` | [x4c](https://github.com/oxidecomputer/p4) → Rust, committed under `crates/up4-x4c/src/generated/` | **yes** (D9) | a real P4 compiler, and real Rust, at the cost of x4c's expressible subset |
+| `ubpf` | `p4c --target ubpf` → BPF bytecode, run in-process on [rbpf](https://crates.io/crates/rbpf) | no | full P4 expressiveness; interpreted, not JIT-compiled (D11) |
+
+They are interchangeable, not merely coexisting: `up4_catalog::build` is total
+over `Program × Backend`, every backend of a program exposes the same tables to
+`up4ctl`, and the conformance corpus holds all three to the same verdicts and
+the same output bytes. The `.p4` is the artifact of record for all of them.
+
+What up4 refuses to claim: `native` is a *hand* rendering, so only the corpus
+ties it to the source — nothing mechanical does. `x4c` cannot compile
+`transition select`, which is why `l3fwd`'s ethertype demux sits in `apply` in
+the SoftNPU binding and in the parser in the uBPF one. Each backend reports
+what it actually is — provenance, allocation profile, execution mode — through
+`up4ctl info`, and the documentation quotes that rather than making claims of
+its own.
+
 ## How it works
 
 ```
  node A (unprivileged process)            node B (unprivileged process)
 +---------------------------+            +---------------------------+
-| P4 pipeline (x4c -> Rust) |            | P4 pipeline (x4c -> Rust) |
+|  P4 pipeline (backend of  |            |  P4 pipeline (backend of  |
+|  native / x4c / ubpf)     |            |  native / x4c / ubpf)     |
 |      vport 0   vport 1    |            |      vport 0   vport 1    |
 +--------|----------|-------+            +-------|----------|--------+
          |          |    UDP + 12B header        |          |
@@ -103,7 +126,8 @@ receivers map source address to ingress port from the static config.
 [node]
 id       = "a"
 bind     = "10.0.0.11:7400"
-pipeline = "l3fwd"           # compiled-in engine name
+pipeline = "l3fwd"           # the P4 program; the backend that runs it
+                             # is `up4d --backend`, defaulting to native
 
 [[vport]]
 id   = 0
@@ -131,6 +155,9 @@ prints the counters. What it does by hand:
 
 # start a node; --tables installs routes before the datapath comes up
 ./up4d --config up4.toml --tables routes.json
+
+# the same program, compiled by p4c instead of rendered by hand
+./up4d --config up4.toml --tables routes.json --backend ubpf
 
 # what is loaded, and what its tables will accept
 ./up4ctl --socket /tmp/up4-a.sock info
@@ -180,7 +207,9 @@ Working, tested on loopback, and green in CI:
 - [x] I/O core: batched receive, GRO segment walk, GSO transmit, zero
       per-frame allocation
 - [x] `Engine`/`Pipeline` contracts, the match-action core, and two programs
-      (`l2fwd`, `l3fwd`) rendered from their P4 sources
+      (`l2fwd`, `l3fwd`) on all three backends
+- [x] `cargo xtask` toolchain: provisions x4c and p4c into a self-contained
+      userspace prefix, regenerates every artifact, and reconciles drift
 - [x] Control channel: typed table shim, schema discovery, batch load, punt
       drain, counter snapshots, graceful shutdown
 - [x] Differential conformance corpora, gated in CI
@@ -190,9 +219,9 @@ Working, tested on loopback, and green in CI:
 
 Outstanding:
 
-- [ ] x4c-generated pipelines behind the existing seam
-      ([deviations D1](docs/deviations.md))
 - [ ] The BMv2 half of the differential ([deviations D2](docs/deviations.md))
+- [ ] Decide the uBPF JIT: measured speed against the memory bound it costs
+      ([deviations D11](docs/deviations.md))
 - [ ] Cluster validation A1–A7 on real NICs ([m6](docs/plan/m6-cluster-benches.md))
 - [ ] *Post-v1 (out of scope for v1, spec S16):* optional per-port token
       bucket shaper, only if experiments need congestion signals to mean
@@ -202,3 +231,9 @@ Outstanding:
 
 eBPF became uBPF when the VM left the kernel. up4 is P4 with the same idea:
 same programs, same semantics, running where you actually have permission.
+
+The three backends are what makes that more than a slogan. "Userspace P4" is
+not one technique, so up4 does not pretend it is: a hand-rendering you can read,
+a P4-to-Rust compiler, and P4-to-bytecode in a VM are three real answers with
+three different trade-offs, and up4's job is to let you take whichever one your
+experiment needs without changing the `.p4` or the harness around it.

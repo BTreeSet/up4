@@ -44,22 +44,29 @@ impl Program {
         }
     }
 
-    /// What this program refuses at ingress, before its parser runs
-    /// (see [`crate::admission`]).
+    /// What up4 does around this program: the check every arriving frame must
+    /// pass, and the fix-up every departing frame gets
+    /// (see [`crate::envelope`]).
     ///
     /// A property of the *program*, not of a backend: every backend running
-    /// `l3fwd` applies `CoherentIpv4`, whether by composing it or by fusing it
-    /// into its own parser. That is what keeps three renderings of one program
-    /// from becoming three programs.
+    /// `l3fwd` applies the same envelope, whether by composing it or by fusing
+    /// it into its own code. That is what keeps three renderings of one
+    /// program from becoming three programs.
     #[must_use]
-    pub const fn admission(self) -> crate::admission::Admission {
+    pub const fn envelope(self) -> crate::envelope::Envelope {
+        use crate::envelope::{Admission, Envelope, Scrub};
         match self {
-            // A bridge forwards on MAC addresses and has no opinion about
-            // what it is carrying.
-            Self::L2Fwd => crate::admission::Admission::Everything,
+            // A bridge forwards on MAC addresses: it has no opinion about what
+            // it is carrying, and it modifies no header, so it neither refuses
+            // a malformed payload nor invalidates a checksum.
+            Self::L2Fwd => Envelope::IDENTITY,
             // A router acts on the IPv4 header, so it declines to route one
-            // that contradicts itself.
-            Self::L3Fwd => crate::admission::Admission::CoherentIpv4,
+            // that contradicts itself — and having decremented the TTL, it
+            // must not leave a stale checksum behind.
+            Self::L3Fwd => Envelope {
+                admit: Admission::CoherentIpv4,
+                scrub: Scrub::InnerChecksums,
+            },
         }
     }
 
@@ -209,8 +216,25 @@ pub enum ExecMode {
 }
 
 impl ExecMode {
-    /// The mode used when nothing overrides it: the fastest one this target
-    /// can actually run.
+    /// The mode up4's uBPF VM **actually runs in today**, and therefore the one
+    /// `up4ctl info` reports.
+    ///
+    /// Deliberately distinct from [`ExecMode::preferred`], which states the
+    /// *policy*: JIT wherever the target architecture has one. The two are not
+    /// equal yet, because up4's VM calls rbpf's interpreter on every target —
+    /// rbpf's JIT emits x86-64 machine code with no runtime memory checking at
+    /// all, so adopting it means giving up the `register_allowed_memory` bound
+    /// that the VM boundary's `unsafe` is currently justified by. That is a
+    /// trade to make deliberately, not to inherit from a default. See
+    /// docs/deviations.md D11.
+    ///
+    /// A constant, not a guess: `up4-ubpf`'s `reported_mode_is_the_mode_that_runs`
+    /// asserts every shipped program's VM agrees with it, so the day the VM
+    /// starts JIT-compiling, this line has to move or CI goes red.
+    pub const SHIPPED: Self = Self::Interpreted;
+
+    /// The mode this target *could* run, fastest first — up4's JIT policy,
+    /// independent of what the VM implements today.
     #[must_use]
     pub const fn preferred() -> Self {
         #[cfg(target_arch = "x86_64")]
@@ -271,8 +295,9 @@ impl Backend {
                     compiler: "p4c --target ubpf",
                 },
                 alloc: AllocProfile::None,
+                // What runs, not what is planned: see `ExecMode::SHIPPED`.
                 exec: ExecProfile::Bytecode {
-                    mode: ExecMode::preferred(),
+                    mode: ExecMode::SHIPPED,
                 },
             },
         }

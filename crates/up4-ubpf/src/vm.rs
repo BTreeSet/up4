@@ -39,6 +39,7 @@ use std::cell::RefCell;
 
 use crate::elf::Program;
 use crate::table::Table;
+use up4_engine::catalog::ExecMode;
 
 /// `standard_metadata` as `ubpf_model.p4` declares it, laid out as C does.
 pub mod meta {
@@ -206,6 +207,7 @@ refusals! {
 /// A program loaded into a VM, ready to execute frames.
 pub struct Vm {
     vm: rbpf::EbpfVmMbuff<'static>,
+    mode: ExecMode,
     mbuff: Vec<u8>,
     meta: Vec<u8>,
     packet: Vec<u8>,
@@ -316,6 +318,10 @@ impl Vm {
 
         let mut this = Self {
             vm,
+            // rbpf's `execute_program` is an interpreter. The JIT is reachable
+            // from the same type, but taking it would give up
+            // `register_allowed_memory` — see `mode` and `ExecMode::SHIPPED`.
+            mode: ExecMode::Interpreted,
             mbuff: vec![0u8; 16],
             meta: vec![0u8; meta::SIZE],
             packet: vec![0u8; mtu],
@@ -411,6 +417,16 @@ impl Vm {
     #[must_use]
     pub fn packet(&self) -> &[u8] {
         &self.packet
+    }
+
+    /// How this VM executes bytecode — the mode in force, read off the VM that
+    /// is running rather than off a table describing it.
+    ///
+    /// `up4ctl info` quotes [`ExecMode::SHIPPED`]; this is what that constant
+    /// is checked against, so the two cannot drift apart silently.
+    #[must_use]
+    pub const fn mode(&self) -> ExecMode {
+        self.mode
     }
 }
 
@@ -559,6 +575,26 @@ mod key_tests {
         assert!(forwards_to_9(&correct), "the settled encoding must hit");
         assert!(!forwards_to_9(&reversed), "byte-reversed must not hit");
         assert!(!forwards_to_9(&raw), "raw wire bytes must not hit");
+    }
+
+    /// `up4ctl info` reports [`ExecMode::SHIPPED`]; this is the VM that
+    /// answers for it. Every shipped program, so the claim covers the whole
+    /// backend rather than one lucky object file.
+    ///
+    /// This test is the reason the constant is safe to quote in
+    /// documentation: adopting rbpf's JIT without moving `SHIPPED` — or
+    /// moving `SHIPPED` without adopting it — turns the mismatch into a
+    /// failure here instead of into a false line of `up4ctl` output.
+    #[test]
+    fn reported_mode_is_the_mode_that_runs() {
+        for obj in [
+            &include_bytes!("generated/l2fwd.o")[..],
+            &include_bytes!("generated/l3fwd.o")[..],
+        ] {
+            let prog = crate::elf::load(obj).expect("load");
+            let vm = Vm::new(&prog, 2048).expect("prepare");
+            assert_eq!(vm.mode(), ExecMode::SHIPPED);
+        }
     }
 
     /// Install one entry under `key` and report whether a frame to

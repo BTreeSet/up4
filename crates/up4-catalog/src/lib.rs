@@ -15,14 +15,14 @@ use up4_engine::{Pipeline, PipelineParams};
 
 /// Load a selection. Total over `Selection`.
 ///
-/// What a backend runs is `admit(program) ; p4(program)` — the program's
-/// ingress admission check composed with the compiled P4 (see
-/// [`up4_engine::admission`]). The `native` rendering already fuses `admit`
-/// into its parser, proved pointwise by `fusion_is_sound_for_every_version_and_ihl`,
-/// so wrapping it would be a second pass over the same bytes for the same
-/// answer. The compiled backends are opaque and compose it explicitly. All
-/// three end up computing the same function, which is what the conformance
-/// corpus checks with no exceptions to its name.
+/// What a backend runs is `admit(program) ; p4(program) ; scrub(program)` —
+/// the program's ingress check and its departing fix-up wrapped around the
+/// compiled P4 (see [`up4_engine::envelope`]). The `native` rendering already
+/// fuses both ends into its own parser and deparser, so wrapping it would be a
+/// second pass over the same bytes for the same answer; the compiled backends
+/// are opaque and compose them explicitly. All three end up computing the same
+/// function, which is what the conformance corpus checks with no exceptions to
+/// its name.
 #[must_use]
 pub fn build(sel: Selection, params: &PipelineParams) -> Box<dyn Pipeline> {
     match sel {
@@ -36,14 +36,14 @@ pub fn build(sel: Selection, params: &PipelineParams) -> Box<dyn Pipeline> {
         Selection::P4 {
             program,
             backend: Backend::X4c,
-        } => program.admission().wrap(match program {
+        } => program.envelope().wrap(match program {
             Program::L2Fwd => Box::new(up4_x4c::pipeline::X4cPipeline::l2fwd(params)),
             Program::L3Fwd => Box::new(up4_x4c::pipeline::X4cPipeline::l3fwd(params)),
         }),
         Selection::P4 {
             program,
             backend: Backend::Ubpf,
-        } => program.admission().wrap(match program {
+        } => program.envelope().wrap(match program {
             Program::L2Fwd => Box::new(up4_ubpf::pipeline::UbpfPipeline::l2fwd(params)),
             Program::L3Fwd => Box::new(up4_ubpf::pipeline::UbpfPipeline::l3fwd(params)),
         }),

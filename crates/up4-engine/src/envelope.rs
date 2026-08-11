@@ -1,6 +1,14 @@
-//! Ingress admission: the checks up4 makes *before* a P4 program sees a frame.
+//! The envelope around a P4 program: what up4 does before it sees a frame, and
+//! what up4 does to a frame it decided to send.
 //!
-//! # Why this is not in the `.p4`, and not in a backend either
+//! ```text
+//!     up4(program) = admit(program) ; p4(program) ; scrub(program)
+//! ```
+//!
+//! Both ends are up4's, not P4's, and both are declared on the
+//! [`Program`](crate::catalog::Program) rather than on a backend — see below.
+//!
+//! # Why neither end is in the `.p4`, and neither is in a backend
 //!
 //! A P4 parser rejects for exactly one reason: `extract` ran out of bytes. It
 //! never checks that the bytes it took agree with each other. So "the IPv4
@@ -13,6 +21,12 @@
 //! malformed one is cheaper to refuse at ingress than to carry through a table
 //! lookup and a rewrite.
 //!
+//! At the other end, up4 zero-fills the checksums inside a frame it modified
+//! (spec S1.5). A P4 program cannot express that either: the `.p4` zeroes
+//! `hdr.ipv4.hdr_checksum` because that field is one it writes, but the
+//! transport checksum lives in bytes the program never parses, so no
+//! deparser emits it.
+//!
 //! Putting it inside *one* backend is what must not happen. Three renderings
 //! of one program that disagree about which frames they refuse are three
 //! programs. So the check is declared on the [`Program`](crate::catalog::Program)
@@ -23,15 +37,16 @@
 //! ```
 //!
 //! Every backend computes that same composition. The `native` rendering fuses
-//! `admit` into its own parser — the check is already `Ipv4::parse`'s
-//! precondition, so running it twice would be a redundant pass over the same
-//! bytes — while the compiled backends, whose programs are opaque, compose it
-//! explicitly through [`Admitted`]. Same function, two factorizations; the
-//! conformance corpus is what holds the fusion honest, and
-//! `fusion_is_sound_for_every_version_and_ihl` below is what proves it
+//! both ends into its own code — `admit` is already `Ipv4::parse`'s
+//! precondition and `scrub` is already its deparser's last statement, so
+//! running either again would be a redundant pass over the same bytes — while
+//! the compiled backends, whose programs are opaque, compose them explicitly
+//! through [`Enveloped`]. Same function, two factorizations; the conformance
+//! corpus and the end-to-end tests hold the fusion honest, and
+//! `fusion_is_sound_for_every_version_and_ihl` below proves the ingress half
 //! pointwise.
 
-use crate::headers::{ETH_HDR_LEN, ETHERTYPE_IPV4, Ethernet, Ipv4};
+use crate::headers::{ETH_HDR_LEN, ETHERTYPE_IPV4, Ethernet, Ipv4, zero_inner_checksums};
 use crate::{Engine, FrameCtx, Pipeline, TableOps, Verdict};
 
 /// What a program refuses at ingress, before its parser runs.
@@ -59,6 +74,37 @@ pub enum Admission {
     CoherentIpv4,
 }
 
+/// What up4 does to a frame the program decided to send.
+///
+/// A closed sum for the same reason [`Admission`] is one: the alternatives are
+/// a fixed list, and "does nothing" is a named choice rather than a missing
+/// case.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Scrub {
+    /// Nothing. A program that modifies no header leaves every checksum
+    /// exactly as valid — or as invalid — as it found it, and rewriting one it
+    /// did not invalidate would corrupt a frame the switch did not touch.
+    Nothing,
+    /// Zero the IPv4 header checksum and the transport checksum it contains
+    /// (spec S1.5).
+    ///
+    /// up4 never computes or verifies an inner checksum, so a program that
+    /// edits a header must not leave a stale checksum behind that a receiver
+    /// could mistake for a valid one. This is the harness's *only*
+    /// inner-packet modification.
+    InnerChecksums,
+}
+
+impl Scrub {
+    /// Apply this to a frame on its way out. Total, and `O(1)`.
+    pub fn apply(self, frame: &mut [u8]) {
+        match self {
+            Self::Nothing => {}
+            Self::InnerChecksums => zero_inner_checksums(frame),
+        }
+    }
+}
+
 impl Admission {
     /// Whether `frame` may reach the program. Total, and `O(1)`: at most one
     /// Ethernet and one IPv4 header parse, no allocation.
@@ -76,42 +122,60 @@ impl Admission {
             },
         }
     }
+}
 
-    /// Wrap `inner` so every frame passes this check first.
+/// A program's envelope: what runs before it, and what runs after it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Envelope {
+    /// Applied to every arriving frame.
+    pub admit: Admission,
+    /// Applied to every frame the program decided to send.
+    pub scrub: Scrub,
+}
+
+impl Envelope {
+    /// The envelope that does nothing at either end.
+    pub const IDENTITY: Self = Self {
+        admit: Admission::Everything,
+        scrub: Scrub::Nothing,
+    };
+
+    /// Wrap `inner` so it computes `admit ; inner ; scrub`.
     ///
-    /// Returns `inner` unchanged for [`Admission::Everything`]: composing with
-    /// the identity is the identity, and a wrapper that always says yes is a
-    /// branch on the fast path that buys nothing.
+    /// Returns `inner` unchanged for [`Envelope::IDENTITY`]: composing with the
+    /// identity is the identity, and a wrapper whose both halves are no-ops is
+    /// a virtual call on the fast path that buys nothing.
     #[must_use]
     pub fn wrap(self, inner: Box<dyn Pipeline>) -> Box<dyn Pipeline> {
-        match self {
-            Self::Everything => inner,
-            other => Box::new(Admitted {
-                admission: other,
+        if self == Self::IDENTITY {
+            inner
+        } else {
+            Box::new(Enveloped {
+                envelope: self,
                 inner,
-            }),
+            })
         }
     }
 }
 
-/// A pipeline with an [`Admission`] check in front of it.
+/// A pipeline with an [`Envelope`] around it.
 ///
-/// Delegates its whole control-plane surface: admission changes which frames
-/// reach the tables, never what the tables are, so `up4ctl` cannot tell a
-/// wrapped pipeline from an unwrapped one.
-struct Admitted {
-    admission: Admission,
+/// Delegates its whole control-plane surface: an envelope changes which frames
+/// reach the tables and what leaves afterwards, never what the tables are, so
+/// `up4ctl` cannot tell a wrapped pipeline from an unwrapped one.
+struct Enveloped {
+    envelope: Envelope,
     inner: Box<dyn Pipeline>,
 }
 
-impl Pipeline for Admitted {
+impl Pipeline for Enveloped {
     fn name(&self) -> &'static str {
         self.inner.name()
     }
 
     fn engine(&self) -> Box<dyn Engine> {
-        Box::new(AdmittedEngine {
-            admission: self.admission,
+        Box::new(EnvelopedEngine {
+            envelope: self.envelope,
             inner: self.inner.engine(),
         })
     }
@@ -121,20 +185,26 @@ impl Pipeline for Admitted {
     }
 }
 
-/// One shard's view of an [`Admitted`] pipeline.
-struct AdmittedEngine {
-    admission: Admission,
+/// One shard's view of an [`Enveloped`] pipeline.
+struct EnvelopedEngine {
+    envelope: Envelope,
     inner: Box<dyn Engine>,
 }
 
-impl Engine for AdmittedEngine {
+impl Engine for EnvelopedEngine {
     #[inline]
     fn process(&mut self, f: &mut FrameCtx<'_>) -> Verdict {
-        if self.admission.admits(f.frame()) {
-            self.inner.process(f)
-        } else {
-            Verdict::Drop
+        if !self.envelope.admit.admits(f.frame()) {
+            return Verdict::Drop;
         }
+        let verdict = self.inner.process(f);
+        // Only a frame that is going out: a dropped one is never looked at
+        // again, and a punted one goes to the control channel as the pipeline
+        // left it.
+        if matches!(verdict, Verdict::Forward(_) | Verdict::Broadcast) {
+            self.envelope.scrub.apply(f.frame_mut());
+        }
+        verdict
     }
 
     fn name(&self) -> &'static str {

@@ -116,21 +116,54 @@ pub enum Match {
     Lpm,
 }
 
-/// One table's contents.
+/// The widest key window this backend matches on, and the size of the stack
+/// buffer an LPM probe masks into.
 ///
-/// Cost: exact lookup is one `BTreeMap` probe, O(log n) with cache-friendly
-/// nodes — n here is a route table, thousands at most, and the map is rebuilt
-/// on write rather than read, so the read path never allocates. LPM is a scan
-/// over distinct prefix lengths, longest first, so it costs one probe per
-/// populated length rather than one per route (the same bound the `native`
-/// backend's LPM achieves, for the same reason).
+/// Both shipped programs are far under it (8 bytes for `l2fwd`'s MAC, 4 for
+/// `l3fwd`'s IPv4 address). [`Table::new`] refuses a wider layout rather than
+/// truncating one, so the read path can use a fixed buffer and never allocate.
+pub const MAX_MATCH_LEN: usize = 64;
+
+/// One table's contents, bucketed by prefix length.
+///
+/// # Cost
+///
+/// Exact lookup is one probe of the single bucket: `O(log n)` in a `BTreeMap`
+/// with cache-friendly nodes, where n is a route table — thousands at most.
+///
+/// LPM is one probe per **populated prefix length**, longest first, so
+/// `O(d log n)` where `d` is the number of distinct lengths installed (at most
+/// 33 for IPv4, and typically two or three). It is *not* a scan over routes:
+/// `buckets` is kept sorted by prefix descending on write, so the read path
+/// neither derives nor sorts anything.
+///
+/// Neither path allocates. That is load-bearing rather than incidental — the
+/// `ubpf` backend declares `AllocProfile::None` in `Backend::facts()`, and the
+/// only heap traffic a frame could cause is here.
+///
+/// An earlier revision stored one flat `BTreeMap<(u8, Bytes), Bytes>` and
+/// derived the prefix lengths per lookup, which made every packet cost a
+/// `Vec` allocation plus an `O(n log n)` sort over the whole table. The
+/// `backends` benchmark is what found it: `l3fwd` at 1000 routes cost 7.4 µs
+/// per frame against 2.7 µs at one route. Both claims above were in this
+/// comment at the time and neither was true, which is the argument for
+/// measuring rather than asserting.
 #[derive(Clone, Debug)]
 pub struct Table {
     matching: Match,
     layout: Layout,
-    /// Exact: key image → value image. LPM: (prefix_len, masked key) → value.
-    entries: BTreeMap<(u8, Bytes), Bytes>,
+    /// Populated prefix lengths, **longest first**, each with the entries
+    /// installed at that length keyed by their masked key image. An exact
+    /// table has at most one bucket, at prefix 0.
+    buckets: Vec<Bucket>,
     default: Option<Bytes>,
+}
+
+/// The entries sharing one prefix length.
+#[derive(Clone, Debug)]
+struct Bucket {
+    prefix: u8,
+    entries: BTreeMap<Bytes, Bytes>,
 }
 
 impl Table {
@@ -138,12 +171,22 @@ impl Table {
     /// map, which is an array of one and always answers; an entry map must
     /// return nothing on a miss, because that is the signal the generated code
     /// uses to go and consult the default map.
+    ///
+    /// # Panics
+    /// If `layout.match_len` exceeds [`MAX_MATCH_LEN`]. A table is built from
+    /// a compiled-in layout, so this is a build-time fact about the shipped
+    /// programs, checked once here rather than per lookup.
     #[must_use]
     pub fn new(matching: Match, layout: Layout, default: Option<Bytes>) -> Self {
+        assert!(
+            layout.match_len <= MAX_MATCH_LEN,
+            "match window {} exceeds MAX_MATCH_LEN {MAX_MATCH_LEN}",
+            layout.match_len
+        );
         Self {
             matching,
             layout,
-            entries: BTreeMap::new(),
+            buckets: Vec::new(),
             default,
         }
     }
@@ -155,15 +198,42 @@ impl Table {
     }
 
     /// Install or replace an entry. `prefix` is ignored for an exact table.
+    ///
+    /// `O(log n)` plus, for a prefix length not yet present, an insertion into
+    /// `buckets` — `O(d)` to keep it sorted, with `d` at most 33.
     pub fn insert(&mut self, key: &[u8], prefix: u8, value: Bytes) {
         let (p, k) = self.canonical(key, prefix);
-        self.entries.insert((p, k), value);
+        // Descending by prefix, so the read path takes the first match.
+        let at = self
+            .buckets
+            .binary_search_by(|b| p.cmp(&b.prefix))
+            .unwrap_or_else(|at| {
+                self.buckets.insert(
+                    at,
+                    Bucket {
+                        prefix: p,
+                        entries: BTreeMap::new(),
+                    },
+                );
+                at
+            });
+        self.buckets[at].entries.insert(k, value);
     }
 
     /// Remove an entry, reporting whether one was there.
+    ///
+    /// A bucket emptied by the removal goes with it, so a prefix length that
+    /// no longer has routes stops costing a probe.
     pub fn remove(&mut self, key: &[u8], prefix: u8) -> bool {
         let (p, k) = self.canonical(key, prefix);
-        self.entries.remove(&(p, k)).is_some()
+        let Ok(at) = self.buckets.binary_search_by(|b| p.cmp(&b.prefix)) else {
+            return false;
+        };
+        let gone = self.buckets[at].entries.remove(&k).is_some();
+        if self.buckets[at].entries.is_empty() {
+            self.buckets.remove(at);
+        }
+        gone
     }
 
     /// Replace the miss value.
@@ -171,27 +241,32 @@ impl Table {
         self.default = Some(value);
     }
 
-    /// Every entry, in a deterministic order.
-    pub fn iter(&self) -> impl Iterator<Item = (&(u8, Bytes), &Bytes)> {
-        self.entries.iter()
+    /// Every entry as `(prefix, masked key, value)`, in a deterministic order:
+    /// longest prefix first, then by key.
+    pub fn iter(&self) -> impl Iterator<Item = (u8, &[u8], &[u8])> {
+        self.buckets.iter().flat_map(|b| {
+            b.entries
+                .iter()
+                .map(move |(k, v)| (b.prefix, k.as_slice(), v.as_slice()))
+        })
     }
 
     /// Entries installed.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.entries.len()
+        self.buckets.iter().map(|b| b.entries.len()).sum()
     }
 
     /// Whether no entry is installed.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
+        self.buckets.is_empty()
     }
 
     /// Forget every entry, reporting how many there were.
     pub fn clear(&mut self) -> usize {
-        let n = self.entries.len();
-        self.entries.clear();
+        let n = self.len();
+        self.buckets.clear();
         n
     }
 
@@ -205,20 +280,24 @@ impl Table {
     pub fn lookup(&self, key: &[u8]) -> Option<&[u8]> {
         let w = self.window(key);
         let found = match self.matching {
-            Match::Exact => self.entries.get(&(0, w.to_vec())),
+            // `BTreeMap<Vec<u8>, _>` probes by `&[u8]` through `Borrow`, so
+            // the key image is never copied to ask a question about it.
+            Match::Exact => self.buckets.first().and_then(|b| b.entries.get(w)),
             Match::Lpm => self.longest_prefix(w),
         };
         found.or(self.default.as_ref()).map(Vec::as_slice)
     }
 
-    /// Longest-prefix search: try each populated length, longest first.
+    /// Longest-prefix search: probe each populated length, longest first.
+    ///
+    /// `buckets` is already in that order, so this is a walk, not a search for
+    /// where to start. The mask goes into a stack buffer — `MAX_MATCH_LEN` is
+    /// checked at construction, so the window always fits.
     fn longest_prefix(&self, key: &[u8]) -> Option<&Bytes> {
-        let mut lengths: Vec<u8> = self.entries.keys().map(|(p, _)| *p).collect();
-        lengths.sort_unstable_by(|a, b| b.cmp(a));
-        lengths.dedup();
-        lengths.into_iter().find_map(|p| {
-            let masked = mask(key, p);
-            self.entries.get(&(p, masked))
+        let mut scratch = [0u8; MAX_MATCH_LEN];
+        self.buckets.iter().find_map(|b| {
+            let masked = mask_into(key, b.prefix, &mut scratch);
+            b.entries.get(masked)
         })
     }
 
@@ -237,6 +316,17 @@ impl Table {
     }
 }
 
+/// [`mask`] into a caller-owned buffer, returning the masked window.
+///
+/// The allocation-free form used by the read path; `mask` is the owning form
+/// used on writes, where one allocation per control-plane call is free.
+fn mask_into<'b>(key: &[u8], prefix: u8, out: &'b mut [u8; MAX_MATCH_LEN]) -> &'b [u8] {
+    let n = key.len().min(MAX_MATCH_LEN);
+    out[..n].copy_from_slice(&key[..n]);
+    zero_below(&mut out[..n], prefix);
+    &out[..n]
+}
+
 /// Zero every bit of `key` below the leading `prefix` bits.
 ///
 /// The key image is little-endian, but a prefix is defined over the value's
@@ -244,18 +334,25 @@ impl Table {
 #[must_use]
 pub fn mask(key: &[u8], prefix: u8) -> Bytes {
     let mut out = key.to_vec();
-    let total = out.len() * 8;
+    zero_below(&mut out, prefix);
+    out
+}
+
+/// [`mask`], in place. The one definition of what a prefix means here; both
+/// the owning and the borrowing form go through it, so the read and write
+/// paths cannot disagree about which bits an entry is filed under.
+fn zero_below(key: &mut [u8], prefix: u8) {
+    let total = key.len() * 8;
     let keep = usize::from(prefix).min(total);
     for bit in keep..total {
         // Bit `bit` counted from the most significant end of the value.
         let from_lsb = total - 1 - bit;
         let byte = from_lsb / 8;
         let in_byte = from_lsb % 8;
-        if let Some(b) = out.get_mut(byte) {
+        if let Some(b) = key.get_mut(byte) {
             *b &= !(1u8 << in_byte);
         }
     }
-    out
 }
 
 #[cfg(test)]

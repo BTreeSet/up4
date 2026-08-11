@@ -23,8 +23,8 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
-pub mod admission;
 pub mod catalog;
+pub mod envelope;
 pub mod fallback_ubpf;
 pub mod frame;
 pub mod headers;

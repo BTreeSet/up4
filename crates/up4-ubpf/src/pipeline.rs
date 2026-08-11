@@ -353,7 +353,7 @@ impl TableOps for UbpfPipeline {
         let snap = self.tables.load();
         Ok(snap[idx]
             .iter()
-            .map(|((prefix, k), v)| describe(schema, abi, *prefix, k, v))
+            .map(|(prefix, k, v)| describe(schema, abi, prefix, k, v))
             .collect())
     }
 

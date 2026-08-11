@@ -249,3 +249,46 @@ pub fn routes(count: u32) -> Vec<(String, String)> {
         })
         .collect()
 }
+
+/// A preloaded ring of frames plus the scratch buffer the harness would hand a
+/// pipeline, so a benchmark measures `Engine::process` and nothing around it.
+///
+/// Shared by `engine_only` and `backends` deliberately: a cross-backend ratio
+/// only means something if every backend saw the same frames through the same
+/// loop.
+pub struct Ring {
+    frames: Vec<Vec<u8>>,
+    buf: Vec<u8>,
+    next: usize,
+}
+
+impl Ring {
+    /// `flows` distinct destinations of `len` bytes each, cycled in order.
+    #[must_use]
+    pub fn new(len: usize, flows: u32) -> Self {
+        let frames: Vec<Vec<u8>> = (0..flows)
+            .map(|i| {
+                let addr = std::net::Ipv4Addr::from(0x0a00_0000 | (i << 8) | 9);
+                frame(len, addr.octets())
+            })
+            .collect();
+        Self {
+            buf: vec![0u8; HEADROOM + len.max(up4_engine::headers::MIN_FRAME_LEN)],
+            frames,
+            next: 0,
+        }
+    }
+
+    /// Push the next frame through `engine`, exactly as a shard would.
+    pub fn process(&mut self, engine: &mut dyn up4_engine::Engine) -> up4_engine::Verdict {
+        let frame = &self.frames[self.next % self.frames.len()];
+        self.next += 1;
+        self.buf[HEADROOM..HEADROOM + frame.len()].copy_from_slice(frame);
+        let mut ctx = up4_engine::FrameCtx::new(&mut self.buf, HEADROOM, frame.len(), 0, 0)
+            .expect("the window fits by construction");
+        engine.process(&mut ctx)
+    }
+}
+
+/// Headroom the harness promises a pipeline (spec S7.1).
+pub const HEADROOM: usize = 64;

@@ -24,6 +24,10 @@ name = "engine_only"
 harness = false
 
 [[bench]]
+name = "backends"
+harness = false
+
+[[bench]]
 name = "io_only"
 harness = false
 
