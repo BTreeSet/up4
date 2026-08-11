@@ -282,12 +282,21 @@ fn serve(
 
     // A6's order: rx stops, staged frames flush (each shard flushes as it
     // leaves its loop), then the final snapshot, then exit 0.
-    for shard in shards {
-        let _ = shard.join();
+    for (id, shard) in shards.into_iter().enumerate() {
+        if shard.join().is_err() {
+            // Release builds abort on a panicking thread (spec S12), so this
+            // is reachable only in a debug build — where saying so beats a
+            // silent half-alive switch just as much.
+            error!(shard = id, "shard thread panicked");
+        }
     }
-    let _ = ctl_thread.join();
-    if let Some(writer) = snapshots {
-        let _ = writer.join();
+    if ctl_thread.join().is_err() {
+        error!("control thread panicked");
+    }
+    if let Some(writer) = snapshots
+        && writer.join().is_err()
+    {
+        error!("snapshot thread panicked");
     }
     // The watcher is still parked in `sigwait` if we were stopped by a control
     // command; it is a daemon thread with no state to lose.

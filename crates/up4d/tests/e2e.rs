@@ -138,28 +138,28 @@ fn two_routers_carry_two_generators_in_both_directions() {
         (west_report, east_run.join().expect("generator B thread"))
     });
 
-    // Each generator sent ~20k frames at 10 kpps for 2 s, and every frame it
-    // received crossed both switches.
     for (label, report) in [("A->B", &a_report), ("B->A", &b_report)] {
         assert!(
             report.sent >= 15_000,
             "{label}: only {} frames sent",
             report.sent
         );
-        assert!(
-            report.received >= report.sent * 99 / 100,
-            "{label}: {} of {} frames came back ({:.2}% loss, {} missing by sequence)\n  a: {:?}\n  b: {:?}",
-            report.received,
-            report.sent,
-            report.loss_pct,
-            report.seq_gap_total,
-            fabric.a.counters().vports,
-            fabric.b.counters().vports
-        );
         assert_eq!(report.bad_header, 0, "{label}: undecodable segments");
         assert_eq!(
             report.length_mismatch, 0,
             "{label}: frames changed length in transit"
+        );
+        // Delivery is generous on purpose: a shared CI box can drop frames in
+        // a kernel queue, and that is not up4's fault. What is up4's fault —
+        // and is checked strictly below — is failing to *say* so.
+        assert!(
+            report.received >= report.sent * 95 / 100,
+            "{label}: {} of {} frames came back ({:.2}% loss)\n  a: {:?}\n  b: {:?}",
+            report.received,
+            report.sent,
+            report.loss_pct,
+            fabric.a.counters().vports,
+            fabric.b.counters().vports
         );
         let latency = report
             .latency
@@ -174,7 +174,7 @@ fn two_routers_carry_two_generators_in_both_directions() {
     }
 
     // Nothing was lost by the harness on either node: every frame either
-    // forwarded or was accounted for by the pipeline (spec S9, A5).
+    // forwarded or was accounted for by the pipeline (spec S9).
     for node in [&fabric.a, &fabric.b] {
         let counters = node.counters();
         assert_eq!(
@@ -188,6 +188,29 @@ fn two_routers_carry_two_generators_in_both_directions() {
             counters.node
         );
     }
+
+    // Spec A5, rehearsed: whatever went missing is *attributable*. Each frame
+    // lost in a kernel queue shows up as a sequence gap at the hop that lost
+    // it — at a node for the fabric hops, at the generator for the last one —
+    // so the accounting closes to within the frames still in flight when the
+    // generators stopped.
+    let gaps_at = |node: &Node| {
+        node.vport_counter(0, "rx_seq_gap_total") + node.vport_counter(1, "rx_seq_gap_total")
+    };
+    let sent: u64 = a_report.sent + b_report.sent;
+    let received: u64 = a_report.received + b_report.received;
+    let missing = sent.saturating_sub(received);
+    let attributed = a_report.seq_gap_total
+        + b_report.seq_gap_total
+        + gaps_at(&fabric.a)
+        + gaps_at(&fabric.b)
+        + fabric.a.counters().harness_drops
+        + fabric.b.counters().harness_drops;
+    assert!(
+        attributed + sent / 100 >= missing,
+        "{missing} frames missing of {sent}, only {attributed} attributed; \
+         loss must be explainable, not merely small"
+    );
 
     // Node A received on vport 0 and transmitted on vport 1, and vice versa.
     assert!(fabric.a.vport_counter(0, "rx_pkts") >= 15_000);

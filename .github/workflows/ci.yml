@@ -8,25 +8,35 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Least privilege: no job gets a token at all unless it says so, and each one
+# below restates exactly what it needs. `pull_request` (never
+# `pull_request_target`) means fork code runs without repository write access.
+permissions: {}
+
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
   RUSTFLAGS: -D warnings
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
-
 jobs:
   check:
     name: test, clippy, fmt
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v5
         with:
+          # Nothing here pushes, and CI compiles and runs pull-request code —
+          # including whatever build scripts it brings. Leaving the token in
+          # .git/config (the action's default) would hand it to them.
+          persist-credentials: false
+          # The skills submodule is editor tooling, not part of the build.
           submodules: false
 
       # rust-toolchain.toml pins the version; rustup honours it, so no action
@@ -37,7 +47,27 @@ jobs:
           rustc --version
           cargo --version
 
+      # Cache trust boundary: pull requests restore, only pushes to main save.
+      #
+      # `save-if` defaults to true, so without this a pull-request run writes a
+      # cache of its own build output. GitHub scopes that write to the PR's own
+      # ref — main cannot restore it ("Workflow runs cannot restore caches
+      # created for child branches or sibling branches") — but it can still
+      # poison later runs *of that same pull request*, and it competes for the
+      # repository's shared cache quota, evicting entries main depends on.
+      # GitHub's own guidance for read-only-cache triggers is the same shape:
+      # let a `push` workflow do the saving and let everything else restore.
+      #
+      # The key names the cargo profile whose artifacts the entry holds, and
+      # each job builds exactly one profile — `dev` here (`cargo test` and
+      # `cargo clippy` use the `test` profile, which inherits `dev`), `release`
+      # in the job below. Naming the key after the job instead would let a
+      # cache entry hold artifacts from a profile its key does not name, which
+      # is a state worth making unreachable rather than remembering.
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: dev
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - name: Format
         run: cargo fmt --all --check
@@ -85,18 +115,34 @@ jobs:
           fi
           echo "no privileged interfaces referenced"
 
+      # Debug on purpose: this is a diagnostic print, and a release build here
+      # would put release artifacts in the `dev` cache entry.
       - name: Probe this runner
-        run: cargo run --release -p up4-tools --bin probe -- --peer 127.0.0.1 --pretty
+        run: cargo run -p up4-tools --bin probe -- --peer 127.0.0.1 --pretty
 
   smoke:
     name: two routers on loopback
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          submodules: false
+
+      # `release`, for the same reason the other job's key is `dev`: the key
+      # names the profile in the entry. `cargo bench` would belong here too —
+      # the `bench` profile inherits `release`.
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+
       - name: Build
         run: cargo build --release --workspace
+
       # The same topology the end-to-end tests bring up, driven by the real
       # binaries so the demo script itself stays honest.
       - name: Demo

@@ -33,6 +33,12 @@ const ACCEPT_TIMEOUT: Duration = Duration::from_millis(200);
 /// frame ([`codec::MAX_FRAME`]).
 pub const PUNT_DRAIN_MAX: usize = 64;
 
+/// How long a connected client may say nothing before the server hangs up.
+///
+/// Connections are served one at a time, so an idle one is not merely
+/// impolite — it holds the whole control channel. Bound it (AGENTS.md rule 8).
+const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// Everything the control channel is allowed to touch.
 pub struct Context {
     /// Static half of the `info` reply; uptime is filled in per call.
@@ -289,8 +295,9 @@ impl Server {
         Ok(())
     }
 
-    /// Answer requests on one connection until the peer leaves.
+    /// Answer requests on one connection until the peer leaves or goes quiet.
     fn converse(&self, conn: &mut Socket, buf: &mut Vec<u8>, stop: &Stop) -> io::Result<()> {
+        let mut idle = Duration::ZERO;
         loop {
             let request = match codec::recv::<Request>(conn, buf) {
                 Ok(None) => return Ok(()),
@@ -299,10 +306,16 @@ impl Server {
                     if stop.requested() {
                         return Ok(());
                     }
+                    idle += ACCEPT_TIMEOUT;
+                    if idle >= IDLE_TIMEOUT {
+                        debug!("closing an idle control connection");
+                        return Ok(());
+                    }
                     continue;
                 }
                 Err(e) => return Err(e),
             };
+            idle = Duration::ZERO;
             debug!(?request, "control request");
             let response = handle(&self.ctx, request);
             if let Err(e) = codec::send(conn, &response) {
