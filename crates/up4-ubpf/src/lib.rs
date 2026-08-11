@@ -3,3 +3,4 @@
 #![deny(missing_docs)]
 
 pub mod elf;
+pub mod table;
