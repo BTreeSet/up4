@@ -81,11 +81,18 @@ up4 is named for uBPF's idea — the same programs, running where you have
 permission. Making that true means more than one route from `.p4` to running
 code, so up4 ships three and lets you choose:
 
-| `--backend` | Where the code comes from | Allocates per frame | Notes |
+| `--backend` | Where the code comes from | Allocates per frame | Cost per frame |
 | --- | --- | --- | --- |
-| `native` | Rust, hand-rendered from the SoftNPU source block for block | no | the default; the fastest, and the one the throughput runs use |
-| `x4c` | [x4c](https://github.com/oxidecomputer/p4) → Rust, committed under `crates/up4-x4c/src/generated/` | **yes** (D9) | a real P4 compiler, and real Rust, at the cost of x4c's expressible subset |
-| `ubpf` | `p4c --target ubpf` → BPF bytecode, run in-process on [rbpf](https://crates.io/crates/rbpf) | no | full P4 expressiveness; interpreted, not JIT-compiled (D11) |
+| `native` | Rust, hand-rendered from the SoftNPU source block for block | no | **30-38 ns** — the default, and what the throughput runs use |
+| `x4c` | [x4c](https://github.com/oxidecomputer/p4) → Rust, committed under `crates/up4-x4c/src/generated/` | **yes** (D9) | 4.8-297 µs — a real P4 compiler emitting real Rust, at real cost |
+| `ubpf` | `p4c --target ubpf` → BPF bytecode, run in-process on [rbpf](https://crates.io/crates/rbpf) | no | 1.1-2.9 µs interpreted — full P4 expressiveness; JIT-compiled on x86-64 (D11) |
+
+Measured on aarch64 at 64 B, so the `ubpf` figures are the interpreter; the
+JIT is the default on x86-64 and has not been measured yet. `x4c`'s upper
+figure is `l3fwd` with a thousand routes, where its LPM table is searched
+linearly — about 290 ns per installed route. Pick `x4c` when what matters is
+that a P4 compiler produced the Rust, not when throughput does.
+[benches/RESULTS.md](benches/RESULTS.md) has the full table and the machine.
 
 They are interchangeable, not merely coexisting: `up4_catalog::build` is total
 over `Program × Backend`, every backend of a program exposes the same tables to
@@ -220,7 +227,8 @@ Working, tested on loopback, and green in CI:
 Outstanding:
 
 - [ ] The BMv2 half of the differential ([deviations D2](docs/deviations.md))
-- [ ] Decide the uBPF JIT: measured speed against the memory bound it costs
+- [ ] Measure the uBPF JIT on an x86-64 host — it is the default there and the
+      corpus covers it, but no number has been taken
       ([deviations D11](docs/deviations.md))
 - [ ] Cluster validation A1–A7 on real NICs ([m6](docs/plan/m6-cluster-benches.md))
 - [ ] *Post-v1 (out of scope for v1, spec S16):* optional per-port token

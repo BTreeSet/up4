@@ -216,25 +216,19 @@ pub enum ExecMode {
 }
 
 impl ExecMode {
-    /// The mode up4's uBPF VM **actually runs in today**, and therefore the one
-    /// `up4ctl info` reports.
+    /// Every mode this target can run, fastest first.
     ///
-    /// Deliberately distinct from [`ExecMode::preferred`], which states the
-    /// *policy*: JIT wherever the target architecture has one. The two are not
-    /// equal yet, because up4's VM calls rbpf's interpreter on every target —
-    /// rbpf's JIT emits x86-64 machine code with no runtime memory checking at
-    /// all, so adopting it means giving up the `register_allowed_memory` bound
-    /// that the VM boundary's `unsafe` is currently justified by. That is a
-    /// trade to make deliberately, not to inherit from a default. See
-    /// docs/deviations.md D11.
-    ///
-    /// A constant, not a guess: `up4-ubpf`'s `reported_mode_is_the_mode_that_runs`
-    /// asserts every shipped program's VM agrees with it, so the day the VM
-    /// starts JIT-compiling, this line has to move or CI goes red.
-    pub const SHIPPED: Self = Self::Interpreted;
+    /// One element off x86-64, two on it. Written as a `cfg`-keyed constant
+    /// rather than a filter so that "the JIT is not available here" is a fact
+    /// about the *type*, not a case some caller might forget to handle.
+    #[cfg(target_arch = "x86_64")]
+    pub const ALL: [Self; 2] = [Self::Jit, Self::Interpreted];
+    /// Every mode this target can run, fastest first.
+    #[cfg(not(target_arch = "x86_64"))]
+    pub const ALL: [Self; 1] = [Self::Interpreted];
 
-    /// The mode this target *could* run, fastest first — up4's JIT policy,
-    /// independent of what the VM implements today.
+    /// The mode used when nothing overrides it: the fastest one this target
+    /// can actually run.
     #[must_use]
     pub const fn preferred() -> Self {
         #[cfg(target_arch = "x86_64")]
@@ -295,9 +289,10 @@ impl Backend {
                     compiler: "p4c --target ubpf",
                 },
                 alloc: AllocProfile::None,
-                // What runs, not what is planned: see `ExecMode::SHIPPED`.
+                // What runs: `Vm::new` takes `preferred()`, and
+                // `reported_mode_is_the_mode_that_runs` holds the two equal.
                 exec: ExecProfile::Bytecode {
-                    mode: ExecMode::SHIPPED,
+                    mode: ExecMode::preferred(),
                 },
             },
         }

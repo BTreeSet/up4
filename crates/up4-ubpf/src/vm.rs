@@ -26,14 +26,38 @@
 //! a token and the helper returns the real buffer, which keeps frame ownership
 //! on the Rust side.
 //!
-//! # The one `unsafe`
+//! # `unsafe`, and what bounds it
 //!
 //! rbpf helpers are plain `fn(u64, u64, u64, u64, u64) -> u64` with no context
 //! and no borrow of VM memory, so a lookup key arrives as a host address into
-//! memory rbpf owns. Reading it is the single `unsafe` in this crate, bounded
-//! by the map's declared key width. This is the same trust uBPF's own C
-//! runtime takes, and the reason this crate is separate from the
-//! `#![forbid(unsafe_code)]` engine.
+//! memory rbpf owns. Reading it is `unsafe`, bounded by the map's declared key
+//! width. This is the same trust uBPF's own C runtime takes, and the reason
+//! this crate is separate from the `#![forbid(unsafe_code)]` engine.
+//!
+//! # Interpreting versus JIT-compiling
+//!
+//! [`ExecMode`] is keyed on `target_arch`: rbpf's JIT emits x86-64 machine
+//! code, so on any other target the variant does not exist and there is no
+//! unsupported-mode error for a caller to handle. Where it does exist it is
+//! the default, because up4's testbed is x86-64 and interpreting costs
+//! roughly what an interpreter costs.
+//!
+//! The trade is real and worth stating plainly. `register_allowed_memory`,
+//! which bounds every load and store the *interpreter* makes into the VM's
+//! buffers, is an interpreter feature — rbpf's JIT ignores it and performs no
+//! runtime memory checking at all. Under `ExecMode::Jit` the only thing
+//! keeping generated code inside its buffers is the bounds checking p4c
+//! already emits against `packet_length`, which up4 supplies. That is the
+//! same bargain in-kernel eBPF makes with its verifier, one static argument
+//! instead of a dynamic check, and it is taken deliberately: see
+//! docs/deviations.md D11.
+//!
+//! Compilation happens once, in [`Vm::new`], after the helpers are registered
+//! — the JIT bakes their addresses into the emitted code, so registering one
+//! afterwards would have no effect. rbpf emits into a single 4 KiB page and
+//! overflowing it panics, so an oversized program fails at startup rather than
+//! on a frame; `every_shipped_program_compiles_in_every_mode` is what keeps
+//! that from being discovered in production.
 
 use std::cell::RefCell;
 
@@ -208,7 +232,15 @@ refusals! {
 pub struct Vm {
     vm: rbpf::EbpfVmMbuff<'static>,
     mode: ExecMode,
-    mbuff: Vec<u8>,
+    /// The two pointers the prologue loads, leaked.
+    ///
+    /// rbpf's JIT entry point takes the metadata buffer by `&'a mut` where
+    /// `'a` is the VM's own lifetime parameter — `'static` here, because the
+    /// program text is leaked for the same reason. Leaking these sixteen bytes
+    /// too makes `'static` a fact about the allocation rather than a lifetime
+    /// laundered past the borrow checker, and it is bounded: one per shard,
+    /// for the life of the process.
+    mbuff: &'static mut [u8],
     meta: Vec<u8>,
     packet: Vec<u8>,
     arena: Vec<u8>,
@@ -276,11 +308,22 @@ fn prologue() -> [u8; 16] {
 }
 
 impl Vm {
-    /// Prepare `program` to run frames of at most `mtu` bytes.
+    /// Prepare `program` to run frames of at most `mtu` bytes, in the fastest
+    /// mode this target has.
     ///
     /// # Errors
     /// [`VmError::Rejected`] if rbpf will not accept the bytecode.
     pub fn new(program: &Program, mtu: usize) -> Result<Self, VmError> {
+        Self::with_mode(program, mtu, ExecMode::preferred())
+    }
+
+    /// [`Vm::new`], in a named mode. Exists so tests can hold every mode this
+    /// target has to the same corpus; production takes the default.
+    ///
+    /// # Errors
+    /// [`VmError::Rejected`] if rbpf will not accept the bytecode, or will not
+    /// JIT-compile it.
+    pub fn with_mode(program: &Program, mtu: usize, mode: ExecMode) -> Result<Self, VmError> {
         let mut text = Vec::with_capacity(16 + program.text.len());
         text.extend_from_slice(&prologue());
         text.extend_from_slice(&program.text);
@@ -316,13 +359,19 @@ impl Vm {
             reg(&mut vm, k, f)?;
         }
 
+        // After the helpers, never before: the JIT resolves their addresses at
+        // compile time, so a helper registered afterwards is invisible to the
+        // emitted code.
+        #[cfg(target_arch = "x86_64")]
+        if mode == ExecMode::Jit {
+            vm.jit_compile()
+                .map_err(|e| VmError::Rejected(format!("jit: {e}")))?;
+        }
+
         let mut this = Self {
             vm,
-            // rbpf's `execute_program` is an interpreter. The JIT is reachable
-            // from the same type, but taking it would give up
-            // `register_allowed_memory` — see `mode` and `ExecMode::SHIPPED`.
-            mode: ExecMode::Interpreted,
-            mbuff: vec![0u8; 16],
+            mode,
+            mbuff: Box::leak(vec![0u8; 16].into_boxed_slice()),
             meta: vec![0u8; meta::SIZE],
             packet: vec![0u8; mtu],
             arena: vec![0u8; ARENA],
@@ -385,10 +434,33 @@ impl Vm {
                 arena: arena_ptr,
                 refused: None,
             },
-            || {
-                self.vm
-                    .execute_program(&self.packet, &self.mbuff)
-                    .map_err(|e| VmError::Rejected(e.to_string()))
+            || match self.mode {
+                ExecMode::Interpreted => self
+                    .vm
+                    .execute_program(&self.packet, &self.mbuff[..])
+                    .map_err(|e| VmError::Rejected(e.to_string())),
+                #[cfg(target_arch = "x86_64")]
+                ExecMode::Jit => {
+                    // rbpf wants the mbuff at the VM's own lifetime, which is
+                    // `'static` because the program text is leaked. `mbuff` is
+                    // leaked too, so a `'static` borrow of it is honest rather
+                    // than a lifetime laundered past the borrow checker; the
+                    // round trip through a raw pointer is only how that fact
+                    // is expressed to the compiler.
+                    //
+                    // SAFETY: the pointer is derived from `self.mbuff`, which
+                    // points into a leaked allocation that outlives the
+                    // process, so it is neither dangling nor aliased — nothing
+                    // else reads or writes those sixteen bytes while the call
+                    // runs, and the writes above have ended. Executing
+                    // JIT-compiled code is `unsafe` because rbpf performs no
+                    // runtime memory checking on it; the module docs and
+                    // deviations D11 record why that bound is given up here.
+                    let leaked: *mut [u8] = self.mbuff;
+                    let mbuff: &'static mut [u8] = unsafe { &mut *leaked };
+                    unsafe { self.vm.execute_program_jit(&mut self.packet, mbuff) }
+                        .map_err(|e| VmError::Rejected(e.to_string()))
+                }
             },
         );
         if let Some(what) = refused {
@@ -577,25 +649,47 @@ mod key_tests {
         assert!(!forwards_to_9(&raw), "raw wire bytes must not hit");
     }
 
-    /// `up4ctl info` reports [`ExecMode::SHIPPED`]; this is the VM that
+    /// `up4ctl info` reports [`ExecMode::preferred`]; this is the VM that
     /// answers for it. Every shipped program, so the claim covers the whole
     /// backend rather than one lucky object file.
     ///
-    /// This test is the reason the constant is safe to quote in
-    /// documentation: adopting rbpf's JIT without moving `SHIPPED` — or
-    /// moving `SHIPPED` without adopting it — turns the mismatch into a
-    /// failure here instead of into a false line of `up4ctl` output.
+    /// A VM that quietly fell back to interpreting on a target whose facts
+    /// say `jit` would be an overclaim in `up4ctl info`, which is exactly the
+    /// kind this repository does not get to make.
     #[test]
     fn reported_mode_is_the_mode_that_runs() {
-        for obj in [
-            &include_bytes!("generated/l2fwd.o")[..],
-            &include_bytes!("generated/l3fwd.o")[..],
-        ] {
+        for obj in SHIPPED {
             let prog = crate::elf::load(obj).expect("load");
             let vm = Vm::new(&prog, 2048).expect("prepare");
-            assert_eq!(vm.mode(), ExecMode::SHIPPED);
+            assert_eq!(vm.mode(), ExecMode::preferred());
         }
     }
+
+    /// rbpf's JIT emits into a single 4 KiB page and overflowing it panics,
+    /// which under `panic = "abort"` would end the process. Both shipped
+    /// programs fit today (`l2fwd` is 86 instructions, `l3fwd` 229); this is
+    /// what turns growing past the page into a red test at build time rather
+    /// than an abort at startup.
+    ///
+    /// On a target without a JIT this checks the one mode there is, which is
+    /// the point of keying [`ExecMode::ALL`] on the architecture.
+    #[test]
+    fn every_shipped_program_compiles_in_every_mode() {
+        for obj in SHIPPED {
+            let prog = crate::elf::load(obj).expect("load");
+            for mode in ExecMode::ALL {
+                let vm =
+                    Vm::with_mode(&prog, 2048, mode).unwrap_or_else(|e| panic!("{mode:?}: {e:?}"));
+                assert_eq!(vm.mode(), mode);
+            }
+        }
+    }
+
+    /// Every object file this backend ships.
+    const SHIPPED: [&[u8]; 2] = [
+        include_bytes!("generated/l2fwd.o"),
+        include_bytes!("generated/l3fwd.o"),
+    ];
 
     /// Install one entry under `key` and report whether a frame to
     /// `aa:bb:cc:dd:ee:ff` reached `forward(9)`.

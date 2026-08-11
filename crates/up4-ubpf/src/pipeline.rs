@@ -16,6 +16,7 @@
 
 use std::sync::Arc;
 
+use up4_engine::catalog::{ExecMode, Program};
 use up4_engine::table::Shared;
 use up4_engine::{
     Engine, EntryDesc, FrameCtx, Pipeline, PipelineParams, TableError, TableOps, TableSchema,
@@ -196,10 +197,18 @@ pub struct UbpfPipeline {
     desc: &'static Desc,
     program: elf::Program,
     tables: Arc<Shared<Vec<Table>>>,
+    /// How each shard's VM will execute this program. Fixed when the pipeline
+    /// is built, so every shard runs the same way and `up4ctl info` describes
+    /// all of them.
+    mode: ExecMode,
 }
 
 impl UbpfPipeline {
     fn new(desc: &'static Desc) -> Self {
+        Self::with_mode(desc, ExecMode::preferred())
+    }
+
+    fn with_mode(desc: &'static Desc, mode: ExecMode) -> Self {
         let program = elf::load(desc.object)
             .unwrap_or_else(|e| panic!("{}: committed object does not load: {e}", desc.name));
         // One `Table` per map the program refers to, in index order — the
@@ -228,6 +237,7 @@ impl UbpfPipeline {
             desc,
             program,
             tables: Arc::new(Shared::new(tables)),
+            mode,
         }
     }
 
@@ -241,6 +251,24 @@ impl UbpfPipeline {
     #[must_use]
     pub fn l3fwd(_params: &PipelineParams) -> Self {
         Self::new(&L3FWD)
+    }
+
+    /// A program by name, in a named execution mode.
+    ///
+    /// The mode is not part of `Selection` — it is a property of how the
+    /// bytecode runs, not of which program is loaded — so this is how the
+    /// conformance corpus reaches every mode a target has. Production goes
+    /// through [`UbpfPipeline::l2fwd`] and [`UbpfPipeline::l3fwd`], which take
+    /// [`ExecMode::preferred`].
+    #[must_use]
+    pub fn in_mode(program: Program, mode: ExecMode) -> Self {
+        Self::with_mode(
+            match program {
+                Program::L2Fwd => &L2FWD,
+                Program::L3Fwd => &L3FWD,
+            },
+            mode,
+        )
     }
 
     /// Index of the entry map for `table`, which is where writes land.
@@ -269,7 +297,7 @@ impl Pipeline for UbpfPipeline {
     fn engine(&self) -> Box<dyn Engine> {
         Box::new(UbpfEngine {
             desc: self.desc,
-            vm: Vm::new(&self.program, MTU).unwrap_or_else(|e| {
+            vm: Vm::with_mode(&self.program, MTU, self.mode).unwrap_or_else(|e| {
                 panic!(
                     "{}: VM would not accept its own bytecode: {e}",
                     self.desc.name

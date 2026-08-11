@@ -197,32 +197,51 @@ values of the IPv4 version/IHL byte against all three backends;
 `fusion_is_sound_for_every_version_and_ihl` proves the `native` parser computes
 the check itself, which is why `build` does not wrap it twice.
 
-## D11 — The `ubpf` backend interprets; rbpf's JIT is not adopted
+## D11 — The `ubpf` backend JIT-compiles, giving up rbpf's memory checking
 
-**Spec:** none — this records a gap between up4's stated JIT policy and what
-ships.
+**Spec:** S1.7 — `unsafe` is confined and each use is bounded by a stated
+argument.
 
-**Here:** `ExecMode::preferred()` states the policy (JIT wherever the target
-architecture has one, and the variant does not exist where it does not).
-`ExecMode::SHIPPED` is `Interpreted`, and that is what `Backend::facts()`
-reports and `up4ctl info` prints. `Vm::mode()` answers for the VM that is
-actually running and `reported_mode_is_the_mode_that_runs` asserts the two
-agree for every shipped program.
+**Here:** on x86-64, `Vm::new` calls rbpf's `jit_compile` and every frame runs
+`execute_program_jit`. On every other target `ExecMode::Jit` does not exist —
+the variant is `#[cfg(target_arch = "x86_64")]`, so no code can select it and
+no runtime check has to refuse it. `up4ctl info` reports the mode in force, and
+`reported_mode_is_the_mode_that_runs` holds `Backend::facts()` equal to what
+`Vm::mode()` says for every shipped program.
 
-**Why not adopt it:** rbpf's JIT performs **no runtime memory checking** —
-`register_allowed_memory`, which bounds every access the interpreter makes into
-the VM's buffers, is an interpreter feature and the JIT ignores it. up4's VM
-boundary justifies its `unsafe` partly on that bound. Adopting the JIT trades
-it for speed, on bytecode derived from packets this switch does not trust.
-Two further facts make it a decision rather than a default: rbpf's JIT emits
-x86-64 machine code into a single 4 KiB page (`l3fwd` is 229 instructions and
-compiles, with no margin stated upstream), and an overflow is a panic, which
-under `panic = "abort"` ends the process.
+**What is given up:** `register_allowed_memory`, which bounds every load and
+store the *interpreter* makes into the VM's buffers, is an interpreter feature.
+rbpf's JIT ignores it and performs no runtime memory checking whatsoever. Under
+`ExecMode::Jit` the only thing keeping generated code inside its buffers is the
+bounds checking p4c already emits against `packet_length`, which up4 supplies
+and controls.
 
-**To close it:** measure it on an x86-64 host, decide whether the speed is
-worth the lost bound, and if so implement `Vm::new` under
-`#[cfg(target_arch = "x86_64")]` with the corpus running in both modes. Moving
-`SHIPPED` without doing the work fails CI, which is the point of the constant.
+**Why that is accepted:** it is the bargain in-kernel eBPF makes — one static
+argument in place of a dynamic check — and up4's testbed is x86-64, where
+interpreting costs what an interpreter costs. The decision is deliberate rather
+than inherited from a default, which is why the mode is a closed sum keyed on
+the target architecture rather than a boolean.
+
+**What bounds it instead:**
+
+- The corpus runs through **every** `ExecMode` the target has, not just the
+  default: `runners()` in `crates/up4-catalog/tests/conformance.rs` replays
+  every case through JIT-compiled machine code and through the interpreter, and
+  requires the same verdicts and the same bytes. "The interpreter agrees" is
+  not evidence about the JIT, so the JIT is tested as its own execution.
+- CI runs on `ubuntu-latest`, which is x86-64, so that is the mode CI exercises
+  by default.
+- rbpf emits into a single 4 KiB page and overflowing it panics — under
+  `panic = "abort"`, fatally. Both shipped programs fit today (`l2fwd` is 86
+  instructions, `l3fwd` 229), and
+  `every_shipped_program_compiles_in_every_mode` turns growing past the page
+  into a red test rather than an abort at startup.
+- Compilation happens once, in `Vm::new`, after the helpers are registered —
+  the JIT resolves their addresses at compile time, so a helper registered
+  afterwards would be invisible to the emitted code.
+- The two new `unsafe` sites are on the audit allowlist
+  (`crates/up4d/tests/unsafe_audit.rs`) under the `VmBoundary` warrant, with
+  this deviation as their reason.
 
 ## D12 — `x4c` tables have no default-action setter
 

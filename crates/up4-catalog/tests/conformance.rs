@@ -12,7 +12,7 @@
 
 use serde::Deserialize;
 use std::{collections::BTreeMap, path::PathBuf};
-use up4_engine::catalog::{Backend, Program, Selection};
+use up4_engine::catalog::{Backend, ExecMode, Program, Selection};
 use up4_engine::envelope::Envelope;
 use up4_engine::{
     Engine, FrameCtx, Pipeline, PipelineParams, TypedKey, TypedVal, Verdict,
@@ -176,17 +176,59 @@ fn conform(program: &str) {
     // output on identical input is what makes "the same program" a checkable
     // claim rather than a naming convention — the three share no code and, in
     // the uBPF case, not even a language.
-    for backend in Backend::ALL {
-        check_backend(program, backend, &batch, &cases);
+    for runner in runners(Program::parse(program).expect("known program")) {
+        check_runner(program, &runner, &batch, &cases);
     }
 }
 
-fn check_backend(program: &str, backend: Backend, batch: &Batch, cases: &[Case]) {
-    let sel = Selection::P4 {
-        program: Program::parse(program).expect("known program"),
-        backend,
-    };
-    let pipeline = up4_catalog::build(sel, &PipelineParams::new([0, 1, 2, 3]));
+/// Builds one loaded pipeline, the way `up4_catalog::build` would.
+type Build = Box<dyn Fn(&PipelineParams) -> Box<dyn Pipeline>>;
+
+/// One way of executing a program: a backend, and for `ubpf` an execution mode.
+struct Runner {
+    label: String,
+    build: Build,
+}
+
+/// Every way this target can run `program`.
+///
+/// The uBPF backend appears once per [`ExecMode`] the architecture has, so on
+/// x86-64 the corpus is replayed through JIT-compiled machine code as well as
+/// through the interpreter. Nothing else would hold the JIT to the same
+/// verdicts: it is a different execution of the same bytecode, and rbpf does
+/// no memory checking on it (docs/deviations.md D11), so "the interpreter
+/// agrees" is not evidence about the JIT.
+fn runners(program: Program) -> Vec<Runner> {
+    let mut out = Vec::new();
+    for backend in Backend::ALL {
+        if backend == Backend::Ubpf {
+            for mode in ExecMode::ALL {
+                out.push(Runner {
+                    label: format!("{} ({})", backend.name(), mode.name()),
+                    build: Box::new(move |_params| {
+                        // Built directly rather than through `up4_catalog::build`,
+                        // which takes a `Selection` and has no mode axis — so the
+                        // envelope has to be applied here, exactly as `build` does.
+                        program.envelope().wrap(Box::new(
+                            up4_ubpf::pipeline::UbpfPipeline::in_mode(program, mode),
+                        ))
+                    }),
+                });
+            }
+        } else {
+            out.push(Runner {
+                label: backend.name().to_owned(),
+                build: Box::new(move |params| {
+                    up4_catalog::build(Selection::P4 { program, backend }, params)
+                }),
+            });
+        }
+    }
+    out
+}
+
+fn check_runner(program: &str, runner: &Runner, batch: &Batch, cases: &[Case]) {
+    let pipeline = (runner.build)(&PipelineParams::new([0, 1, 2, 3]));
     load_tables(&*pipeline, &batch.entries);
     let mut engine = pipeline.engine();
 
@@ -194,11 +236,9 @@ fn check_backend(program: &str, backend: Backend, batch: &Batch, cases: &[Case])
         let (verdict, frame) = run(&mut *engine, case);
         let (got_verdict, got_port) = describe(verdict);
         assert_eq!(
-            got_verdict,
-            case.expect.verdict,
+            got_verdict, case.expect.verdict,
             "{program}/{}: {} verdict",
-            case.name,
-            backend.name()
+            case.name, runner.label
         );
         if let Some(want_port) = case.expect.egress_port {
             assert_eq!(
@@ -230,7 +270,7 @@ fn check_backend(program: &str, backend: Backend, batch: &Batch, cases: &[Case])
             }
         }
     }
-    println!("{program}: {} cases pass", cases.len());
+    println!("{program}/{}: {} cases pass", runner.label, cases.len());
 }
 
 #[test]

@@ -6,7 +6,7 @@ was taken on, because the number without the machine is not a result.
 Reproduce with:
 
 ```sh
-cargo bench -p benches            # engine_only, io_only, e2e
+cargo bench -p benches            # engine_only, backends, io_only, e2e
 cargo test  -p benches            # the fast-path allocation guard (S13.5)
 cargo run -p up4-tools --bin probe -- --peer 127.0.0.1 --pretty
 ```
@@ -110,3 +110,86 @@ length, not per route.
 The `x4c` and `ubpf` backends are not measured here yet. Both are correct
 against the shared corpus; neither has a number, and the honest thing is to
 leave that blank rather than quote a figure taken from a debug build.
+
+---
+
+## 2026-08-11 (later still) — all three backends measured
+
+Same box: 4 CPUs (cgroup cpuset `0-3`), Linux 6.17.0-35-generic, **aarch64**,
+loopback only. The architecture matters for one row below.
+
+### backends — the same program, the same frames, three ways
+
+`cargo bench -p benches --bench backends`. Per frame, mean, over one shared
+ring of 16 destinations. This measures `Engine::process` and the program's
+envelope, and nothing else — no sockets, no shard loop.
+
+| program | 64 B | | | 1460 B | | |
+|---|---|---|---|---|---|---|
+| | `native` | `x4c` | `ubpf` | `native` | `x4c` | `ubpf` |
+| `l2fwd` | **37.9 ns** | 4.80 µs | 1.12 µs | **69.4 ns** | 4.93 µs | 1.20 µs |
+| `l3fwd`, 1 route | **30.5 ns** | 8.08 µs | 2.62 µs | **63.3 ns** | 8.20 µs | 2.71 µs |
+| `l3fwd`, 1000 routes | **35.1 ns** | 297 µs | 2.89 µs | **67.5 ns** | 297 µs | 3.00 µs |
+
+As ratios against `native`, which is the part that travels between machines:
+
+| program | `x4c` | `ubpf` |
+|---|---|---|
+| `l2fwd` | 127× | 29× |
+| `l3fwd`, 1 route | 265× | 86× |
+| `l3fwd`, 1000 routes | **8500×** | 82× |
+
+Read the `ubpf` column as the cost of an **interpreter**: this box is aarch64,
+where `ExecMode::Jit` does not exist, so every uBPF figure above is
+`execute_program`, instruction by instruction. On x86-64 the JIT is the default
+(deviations D11) and these numbers do not describe it. That measurement is
+still outstanding and is not guessed at here.
+
+The `x4c` column is not an interpreter — it is compiled Rust — and it is the
+slowest by a wide margin. Two causes, both upstream and both already declared
+rather than discovered: every header field is a heap `BitVec` and the pipeline
+returns a `Vec` of outputs per packet (`AllocProfile::PerFrame`, D9), and its
+LPM table is searched linearly.
+
+**A thousand routes cost `x4c` 289 µs more per frame than one route** — about
+290 ns per installed route, which is a linear scan. At that rate a full
+`l3fwd` table is roughly 3.4 kpps. `x4c` is the backend to pick when what
+matters is that a real P4 compiler produced real Rust; it is not the backend to
+run an experiment through.
+
+### What benchmarking found, before it produced a table
+
+Two of the three columns above are faster than they would have been, because
+measuring them turned up defects that reading the code had not:
+
+| | before | after |
+|---|---|---|
+| `ubpf` `l3fwd`, 1000 routes, 64 B | 7353 ns | **2890 ns** |
+| ...its 1000-vs-1-route delta | 4636 ns | **268 ns** |
+
+`Table::longest_prefix` had collected every entry's prefix length into a fresh
+`Vec`, sorted it, and deduplicated it *per packet*; the exact path copied the
+key image with `to_vec()` just to probe with it. So the uBPF table was O(n log n)
+per frame with an allocation, in a backend whose `Backend::facts()` declares
+`AllocProfile::None`. Entries are now bucketed by prefix length, kept sorted on
+write. The residual 268 ns across 1000 routes is the LPM walking distinct
+prefix lengths, which is the intended shape.
+
+The other two findings changed behaviour rather than speed and are recorded in
+the commit and in deviations D10: `native` was refusing frames the compiled
+backends forwarded, and `native` was zero-filling a transport checksum the
+compiled backends left alone — the second hidden by the corpus mask.
+
+### engine_only — no regression in the fast path
+
+| pipeline | 64 B | previous | 1460 B | previous |
+|---|---|---|---|---|
+| `l2fwd` | 37.2 ns | 37.9 | 69.4 ns | 71.5 |
+| `l3fwd`, 1 route | 30.4 ns | 30.8 | 63.4 ns | 62.7 |
+| `l3fwd`, 1000 routes | 34.6 ns | 34.4 | 67.9 ns | 69.1 |
+
+Within noise of the previous run and mostly faster. The envelope work added no
+cost to `native` because `native` is not wrapped: it already computes both ends
+itself, and `up4_catalog::build` composes them only onto the backends that do
+not.
+
