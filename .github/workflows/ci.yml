@@ -120,6 +120,34 @@ jobs:
       - name: Probe this runner
         run: cargo run -p up4-tools --bin probe -- --peer 127.0.0.1 --pretty
 
+  p4:
+    name: p4 sources compile
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          submodules: false
+
+      # The `.p4` files are the artifact of record (spec P1). This job is what
+      # makes that more than a claim: a real P4 compiler type-checks them, so a
+      # source that drifts into a dialect no compiler accepts fails here rather
+      # than being discovered years later.
+      #
+      # Its own cache key: this job builds x4c, not up4, so mixing its
+      # artifacts into the `dev` or `release` entries would put a profile's
+      # cache under a name that does not describe its contents.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: x4c
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+
+      - name: x4c type-checks the SoftNPU sources
+        run: ./tools/p4/x4c.sh check
+
   smoke:
     name: two routers on loopback
     runs-on: ubuntu-latest

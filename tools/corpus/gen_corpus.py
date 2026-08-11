@@ -2,7 +2,7 @@
 """Generate up4's conformance corpora (spec S10).
 
 This script is an *independent model* of the two P4 programs: it builds each
-frame and works out what `p4/programs/<name>/<name>.p4` says should happen to
+frame and works out what `p4/programs/<name>/<name>.softnpu.p4` says should happen to
 it, without consulting the Rust implementation. `crates/up4-engine/tests/
 conformance.rs` then replays the corpus through the real engine and diffs.
 

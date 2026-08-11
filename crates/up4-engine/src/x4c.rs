@@ -1,6 +1,6 @@
 //! The x4c seam (spec S7.2, S7.3).
 //!
-//! up4 v1 as specified compiles each `p4/programs/*.p4` with a pinned `x4c`
+//! up4 v1 as specified compiles each `p4/programs/*/*.softnpu.p4` with a pinned `x4c`
 //! and adapts the generated `Pipeline` onto [`crate::Engine`]. This build does
 //! not run x4c (see `docs/deviations.md`); the compiled-in programs are direct
 //! renderings of the same P4 sources onto the same two contracts. This module
@@ -192,13 +192,13 @@ mod tests {
                 .and_then(|n| n.to_str())
                 .expect("utf-8 name")
                 .to_owned();
-            let src_path = dir.join(format!("{name}.p4"));
+            let src_path = dir.join(format!("{name}.softnpu.p4"));
             let src = std::fs::read_to_string(&src_path)
                 .unwrap_or_else(|e| panic!("{} unreadable: {e}", src_path.display()));
             assert_eq!(
                 refuse_reason(&src),
                 None,
-                "{name}.p4 would be refused at build time"
+                "{name}.softnpu.p4 would be refused at build time"
             );
             seen += 1;
         }

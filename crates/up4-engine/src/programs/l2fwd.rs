@@ -1,6 +1,6 @@
 //! `l2fwd`: an L2 switch with a static forwarding database.
 //!
-//! Rendering of `p4/programs/l2fwd/l2fwd.p4`:
+//! Rendering of `p4/programs/l2fwd/l2fwd.softnpu.p4`:
 //!
 //! ```text
 //! parser        extract ethernet                      -> Ethernet::parse

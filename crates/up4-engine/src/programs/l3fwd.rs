@@ -1,6 +1,6 @@
 //! `l3fwd`: an IPv4 router.
 //!
-//! Rendering of `p4/programs/l3fwd/l3fwd.p4`:
+//! Rendering of `p4/programs/l3fwd/l3fwd.softnpu.p4`:
 //!
 //! ```text
 //! parser          extract ethernet                         -> Ethernet::parse
