@@ -5,6 +5,7 @@ members = [
     "crates/up4-config",
     "crates/up4-metrics",
     "crates/up4-engine",
+    "crates/up4-x4c",
     "crates/up4-io",
     "crates/up4-ctl",
     "crates/up4d",

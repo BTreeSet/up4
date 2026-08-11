@@ -1,0 +1,28 @@
+[package]
+name = "up4-x4c"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+# The `x4c` backend: P4 compiled to Rust by Oxide's x4c, adapted onto up4's
+# `Engine`/`Pipeline` contracts.
+#
+# This crate exists because `up4-engine` is `#![forbid(unsafe_code)]` and the
+# generated code is not: x4c emits `unsafe impl Send for main_pipeline` and
+# `#[unsafe(no_mangle)]`. A crate-level `forbid` cannot be relaxed per module,
+# so the generated code lives here, where the exception is named and bounded,
+# and the pure core stays pure.
+
+[dependencies]
+up4-engine = { path = "../up4-engine" }
+
+# x4c's runtime. Not on crates.io, so it is pinned by revision — the same
+# revision `tools/p4/x4c.sh` builds the compiler from, because generated code
+# and runtime are one artifact and must not drift apart.
+p4rs = { git = "https://github.com/oxidecomputer/p4", rev = "e29b7953ed6c0577d7e170a8d83d20b0f989d240" }
+
+# Required by the generated code, at the versions x4c's own workspace uses.
+bitvec = "1.0"
+colored = "3"
+usdt = "0.5.0"

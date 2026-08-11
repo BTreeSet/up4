@@ -63,7 +63,20 @@ for prog in "${PROGRAMS[@]}"; do
         [[ -n $outdir ]] || { echo "generate needs an output directory" >&2; exit 2; }
         mkdir -p "$outdir"
         (cd "$stage" && "$x4c" "$src" -o "$prog.rs")
-        mv "$stage/$prog.rs" "$outdir/$prog.rs"
+        # Drop x4c's `_main_pipeline_create` shim. It exists so SoftNPU can
+        # dlopen a pipeline as a shared object, and it is `#[no_mangle]`, so
+        # two programs in one crate collide on the symbol. up4 links the
+        # generated code statically and constructs `main_pipeline::new()`
+        # directly, so the shim is unreachable here as well as unbuildable.
+        awk '/^#\[unsafe\(no_mangle\)\]$/ {skip = 1} skip && /^}$/ {skip = 0; next} !skip' \
+            "$stage/$prog.rs" >"$outdir/$prog.rs"
+        rm -f "$stage/$prog.rs"
+        # Format on generation, not after. `cargo fmt --check` covers the whole
+        # workspace, and hand-formatting generated code would make it differ
+        # from what the generator emits, which is exactly what the
+        # regenerate-and-diff check exists to detect. x4c and rustfmt are both
+        # pinned, so this stays deterministic.
+        rustfmt --edition 2024 "$outdir/$prog.rs"
         echo "$outdir/$prog.rs: $(wc -l <"$outdir/$prog.rs") lines"
         ;;
     *)
