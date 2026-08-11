@@ -1,0 +1,18 @@
+{
+  "entries": [
+    {
+      "table": "mac_dst",
+      "key": "02:00:00:00:00:02",
+      "action": "forward",
+      "params": {
+        "port": "1"
+      }
+    },
+    {
+      "table": "mac_dst",
+      "key": "02:00:00:00:00:03",
+      "action": "drop",
+      "params": {}
+    }
+  ]
+}

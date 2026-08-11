@@ -1,0 +1,25 @@
+[package]
+name = "up4-io"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "up4 I/O shell: sockets, batched receive and transmit, capability probe, signals"
+
+[dependencies]
+up4-wire.workspace = true
+up4-config.workspace = true
+up4-engine.workspace = true
+up4-metrics.workspace = true
+quinn-udp.workspace = true
+socket2.workspace = true
+libc.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+up4-engine = { workspace = true, features = ["oracle"] }
+
+[features]
+oracle = ["up4-engine/oracle"]

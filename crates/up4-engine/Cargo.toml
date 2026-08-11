@@ -1,0 +1,20 @@
+[package]
+name = "up4-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "up4 pipeline layer: the Engine contract, the match-action core, and the compiled-in P4 programs"
+
+[dependencies]
+serde.workspace = true
+up4-wire.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+serde = { workspace = true }
+
+[features]
+# The null oracle exists for benchmarks only (spec S7.4) and is excluded from
+# default builds so it can never be reached by a production configuration.
+oracle = []

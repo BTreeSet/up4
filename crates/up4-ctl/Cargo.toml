@@ -1,0 +1,23 @@
+[package]
+name = "up4-ctl"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "up4 control channel: SOCK_SEQPACKET server, protocol, and the up4ctl client"
+
+[dependencies]
+up4-wire.workspace = true
+up4-config.workspace = true
+up4-engine.workspace = true
+up4-io.workspace = true
+up4-metrics.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+socket2.workspace = true
+tracing.workspace = true
+clap.workspace = true
+
+[[bin]]
+name = "up4ctl"
+path = "src/bin/up4ctl.rs"

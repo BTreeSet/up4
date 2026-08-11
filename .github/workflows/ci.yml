@@ -1,0 +1,103 @@
+name: ci
+
+# up4's definition of done for a change (AGENTS.md): tests green, clippy clean,
+# formatting unchanged, and the unprivileged/`unsafe` invariants still holding.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: test, clippy, fmt
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: false
+
+      # rust-toolchain.toml pins the version; rustup honours it, so no action
+      # is needed to select one.
+      - name: Toolchain
+        run: |
+          rustup show active-toolchain
+          rustc --version
+          cargo --version
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Clippy (oracle feature)
+        run: cargo clippy --workspace --all-targets --features up4d/oracle -- -D warnings
+
+      # The end-to-end tests bind loopback ports and spawn up4d processes, all
+      # as an ordinary user — which is the point (spec S1.1).
+      - name: Test
+        run: cargo test --workspace
+
+      - name: Conformance corpora are current
+        run: python3 tools/corpus/gen_corpus.py --check
+
+      # Spec A7: `unsafe` lives only in up4-io's syscall plumbing. `benches/`
+      # is test scaffolding outside `crates/` and holds the counting allocator;
+      # docs/deviations.md records why.
+      - name: Audit unsafe
+        run: |
+          # Real `unsafe` only: not the `forbid(unsafe_code)` attributes that
+          # prove its absence, and not prose about it in doc comments.
+          hits=$(grep -rnE '\bunsafe\b' crates/ --include='*.rs' \
+            | grep -v '^crates/up4-io/' \
+            | grep -v 'forbid(unsafe_code)' \
+            | grep -vE '^[^:]*:[0-9]+:[[:space:]]*(//|\*)' || true)
+          if [ -n "$hits" ]; then
+            echo "$hits"
+            echo "::error::unsafe found outside up4-io (spec S1.7, A7)"
+            exit 1
+          fi
+          echo "unsafe is confined to up4-io"
+
+      # Spec S1.1: no capabilities, no sysctls, no raw sockets, no TUN/TAP, no
+      # namespaces — not required and not attempted.
+      - name: Audit privileged interfaces
+        run: |
+          if grep -rnE 'CAP_NET|setcap|sysctl -w|SOCK_RAW|/dev/net/tun|unshare\(|setns\(' \
+              crates/ tools/ benches/ --include='*.rs' --include='*.py'; then
+            echo "::error::privileged interface referenced (spec S1.1)"
+            exit 1
+          fi
+          echo "no privileged interfaces referenced"
+
+      - name: Probe this runner
+        run: cargo run --release -p up4-tools --bin probe -- --peer 127.0.0.1 --pretty
+
+  smoke:
+    name: two routers on loopback
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release --workspace
+      # The same topology the end-to-end tests bring up, driven by the real
+      # binaries so the demo script itself stays honest.
+      - name: Demo
+        run: ./scripts/demo.sh

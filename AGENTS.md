@@ -5,13 +5,15 @@ UDP sockets, no root, no async, static TOML topology.
 
 **Artifact of record: [docs/spec.md](docs/spec.md).** On any conflict the spec
 wins. Where it is silent, apply its design principles (S3) and ask rather than
-invent protocol or semantics.
+invent protocol or semantics. Where the implementation already departs from it,
+[docs/deviations.md](docs/deviations.md) says so and why — check there before
+"fixing" something that looks wrong.
 
 ## Progressive disclosure — read only what the task needs
 
 | Task | Read |
 |---|---|
-| Anything | this file |
+| Anything | this file, then [docs/deviations.md](docs/deviations.md) |
 | Any implementation | [docs/spec.md](docs/spec.md) section for your crate + the one milestone plan in [docs/README.md](docs/README.md) |
 | Wire format, config, probe | spec S4–S5, S11.1 + [docs/plan/m1](docs/plan/m1-wire-config-probe.md) |
 | Sockets, rx/tx, pktgen | spec S6, S7.4, S11.2 + [docs/plan/m2](docs/plan/m2-io-pktgen.md) |
@@ -40,10 +42,12 @@ M(n)'s done-when is unmet.
 
 ```sh
 cargo build --workspace
-cargo test --workspace
+cargo test --workspace          # incl. conformance corpora and the loopback e2e
 cargo clippy --workspace --all-targets -- -D warnings   # must be clean
 cargo fmt --check
-cargo bench -p benches                                  # fast-path changes only
+./scripts/demo.sh               # two routers + two generators, no root
+cargo bench -p benches          # fast-path changes only; update benches/RESULTS.md
+python3 tools/corpus/gen_corpus.py --check              # corpora are current
 ```
 
 Definition of done per change: tests green, clippy clean, and — for any

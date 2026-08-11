@@ -1,0 +1,12 @@
+[package]
+name = "up4-metrics"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "up4 counter registry and snapshot serialization (spec S9)"
+
+[dependencies]
+up4-config.workspace = true
+serde.workspace = true
+serde_json.workspace = true

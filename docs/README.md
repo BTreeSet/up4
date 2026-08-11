@@ -17,5 +17,10 @@ you know enough for the task in front of you.
    | l3fwd, punt | [plan/m5-l3fwd-punt.md](plan/m5-l3fwd-punt.md) | S7.2, S8.3, S14 |
    | cluster runs, benches | [plan/m6-cluster-benches.md](plan/m6-cluster-benches.md) | S13, S14 |
 
+3. [deviations.md](deviations.md) — where this implementation departs from the
+   spec, and why. Read it before concluding that something is missing: the
+   x4c build step, the BMv2 differential runner, and the blocking-socket
+   wording are all recorded there with the seam that closes each one.
+
 Milestones are sequential (spec S15); each ends runnable. Do not start M(n+1)
 with M(n)'s done-when unmet.

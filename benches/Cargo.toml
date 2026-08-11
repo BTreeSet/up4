@@ -1,0 +1,31 @@
+[package]
+name = "benches"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+description = "up4 benchmarks and the fast-path allocation guard (spec S13.4, S13.5)"
+
+[dependencies]
+up4-wire.workspace = true
+up4-config.workspace = true
+up4-engine = { workspace = true, features = ["oracle"] }
+up4-io = { workspace = true, features = ["oracle"] }
+up4-metrics.workspace = true
+quinn-udp.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "engine_only"
+harness = false
+
+[[bench]]
+name = "io_only"
+harness = false
+
+[[bench]]
+name = "e2e"
+harness = false

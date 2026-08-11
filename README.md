@@ -27,21 +27,29 @@ source of truth for what the switch does.
 
 ## What you get
 
-- **A real P4 toolchain.** Pipelines are compiled from P4 source by
-  [x4c](https://github.com/oxidecomputer/p4) into native Rust code
-  implementing a `Pipeline` trait. A p4c-ubpf backend behind the same engine
-  trait is planned as a fallback for programs that need constructs x4c does
-  not cover yet.
+- **A real P4 toolchain.** The P4 source in `p4/programs/` is the artifact of
+  record, and a pipeline is a `Pipeline`/`Engine` implementation of it: a
+  parser, match-action tables with typed keys and closed action sets, and a
+  deparser. Today those implementations are rendered from the P4 by hand and
+  checked against it by a differential corpus; the seam for
+  [x4c](https://github.com/oxidecomputer/p4)-generated code — including its
+  byte-level control-plane ABI — is in `up4-engine/src/x4c.rs`. See
+  [docs/deviations.md](docs/deviations.md) D1. A p4c-ubpf backend behind the
+  same engine trait is sketched as a fallback.
 - **Throughput that supports real measurements.** The I/O layer uses batched
-  syscalls (`sendmmsg`, `recvmmsg`) and UDP GSO/GRO through
+  syscalls (`recvmmsg`) and UDP GSO/GRO through
   [quinn-udp](https://crates.io/crates/quinn-udp), the same code path that
-  moves QUIC traffic in Firefox. Design target: 10 GbE line rate at MTU-size
-  packets on a single core, with default kernel settings. The same technique
-  carries WireGuard's userspace implementation past 10 Gbit/s.
+  moves QUIC traffic in Firefox. On a 4-core development box, over loopback,
+  the full path with a 1000-route `l3fwd` sustains **849 kpps / 9.9 Gbps** of
+  inner traffic at 1460 B, and the datapath allocates nothing per frame.
+  Numbers and machine: [benches/RESULTS.md](benches/RESULTS.md).
 - **Verified behavior, not asserted behavior.** Every supported P4 program
-  ships with a packet corpus. CI runs the corpus through BMv2 and through
-  up4 and diffs the verdicts: egress port, header rewrites, drops. A program
-  without a corpus is not supported.
+  ships with a packet corpus whose expectations come from an independent
+  model of the P4 source. CI replays it through the pipeline and diffs
+  verdicts and frame bytes — egress port, header rewrites, drops — masking
+  only the checksums up4 never computes. A program without a corpus fails the
+  build. (The BMv2 half of the differential is not wired yet:
+  [docs/deviations.md](docs/deviations.md) D2.)
 - **Honest counters.** Per-port packet, byte, and drop counters, sequence
   gap detection for overlay loss, and GRO batch histograms, so an experiment
   can always distinguish "the switch under test dropped this" from "the
@@ -108,21 +116,43 @@ peer = "10.0.0.13:7400"   # node c, vport 0
 
 ## Quick start
 
-> Status: design stage. The commands below describe the intended v1
-> interface and will change.
+```sh
+cargo build --release
+./scripts/demo.sh          # two routers and a generator on loopback, no sudo
+```
+
+`demo.sh` is the shortest path to a running switch: it writes two topologies,
+starts two `up4d` processes, installs routes, pushes traffic through both, and
+prints the counters. What it does by hand:
 
 ```sh
-# compile a P4 program to a pipeline
-x4c switch.p4 -o pipeline.rs
+# what this host will let up4 do — buffers, GRO/GSO, cgroup CPUs, route MTU
+./probe --peer 10.0.0.12 --pretty
 
-# build up4 with the pipeline
-cargo build --release
+# start a node; --tables installs routes before the datapath comes up
+./up4d --config up4.toml --tables routes.json
 
-# on each node, no sudo anywhere
-./up4d --config up4.toml
+# what is loaded, and what its tables will accept
+./up4ctl --socket /tmp/up4-a.sock info
+./up4ctl --socket /tmp/up4-a.sock tables
+# table ipv4_lpm
+#   key    ipv4.dst : lpm   (ipv4 (10.0.0.1)/prefix_len)
+#   action forward(port: u16 (e.g. 1 or 0x1f), dmac: mac (aa:bb:cc:dd:ee:ff))
+#   action punt()
+#   action drop()
 
-# add a table entry through the local side channel
-./up4ctl table add ingress.fwd.fib --key 02:00:00:00:00:01 --action forward --port 1
+# add a route, positionally or by name; both mean the same thing
+./up4ctl table add ipv4_lpm 10.0.2.0/24 forward port=1 dmac=02:00:00:00:00:02
+./up4ctl table dump ipv4_lpm
+./up4ctl table load routes-1k.json      # a batch, for the 1000-route runs
+
+# offered load, and what actually came back
+./pktgen --bind 10.0.0.9:7500 --target 10.0.0.11:7400 \
+         --frame-size 1460 --rate-pps 800000 --duration 60
+
+# every counter, and a clean stop
+./up4ctl counters --json | jq .harness_drops
+./up4ctl shutdown
 ```
 
 ## Design principles
@@ -144,12 +174,26 @@ cargo build --release
 
 ## Status and roadmap
 
-- [ ] Gate test: compile the lab's target P4 programs with x4c
-- [ ] Cluster probe: kernel version, GRO/GSO support, socket buffer caps
-- [ ] I/O core: batched UDP echo path at target rate
-- [ ] Engine integration behind the `Engine` trait
-- [ ] BMv2 differential conformance CI
-- [ ] Broadcast replication and punt port
+Working, tested on loopback, and green in CI:
+
+- [x] Cluster probe: kernel, GRO/GSO, granted socket buffers, cgroup CPUs, MTU
+- [x] I/O core: batched receive, GRO segment walk, GSO transmit, zero
+      per-frame allocation
+- [x] `Engine`/`Pipeline` contracts, the match-action core, and two programs
+      (`l2fwd`, `l3fwd`) rendered from their P4 sources
+- [x] Control channel: typed table shim, schema discovery, batch load, punt
+      drain, counter snapshots, graceful shutdown
+- [x] Differential conformance corpora, gated in CI
+- [x] Broadcast replication and punt port
+- [x] Two routers and two generators forwarding both ways, unprivileged, with
+      every lost frame attributable
+
+Outstanding:
+
+- [ ] x4c-generated pipelines behind the existing seam
+      ([deviations D1](docs/deviations.md))
+- [ ] The BMv2 half of the differential ([deviations D2](docs/deviations.md))
+- [ ] Cluster validation A1–A7 on real NICs ([m6](docs/plan/m6-cluster-benches.md))
 - [ ] *Post-v1 (out of scope for v1, spec S16):* optional per-port token
       bucket shaper, only if experiments need congestion signals to mean
       something

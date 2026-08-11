@@ -1,0 +1,12 @@
+[package]
+name = "up4-config"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "up4 topology configuration: one smart constructor from TOML to a total domain model"
+
+[dependencies]
+up4-wire.workspace = true
+serde.workspace = true
+toml.workspace = true

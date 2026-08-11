@@ -1,0 +1,34 @@
+{
+  "entries": [
+    {
+      "table": "ipv4_lpm",
+      "key": "10.0.2.0/24",
+      "action": "forward",
+      "params": {
+        "port": "1",
+        "dmac": "bb:bb:bb:bb:bb:01"
+      }
+    },
+    {
+      "table": "ipv4_lpm",
+      "key": "10.0.2.7/32",
+      "action": "forward",
+      "params": {
+        "port": "2",
+        "dmac": "bb:bb:bb:bb:bb:02"
+      }
+    },
+    {
+      "table": "ipv4_lpm",
+      "key": "10.7.0.0/16",
+      "action": "punt",
+      "params": {}
+    },
+    {
+      "table": "ipv4_lpm",
+      "key": "10.8.0.0/16",
+      "action": "drop",
+      "params": {}
+    }
+  ]
+}

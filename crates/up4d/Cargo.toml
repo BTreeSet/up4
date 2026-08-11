@@ -1,0 +1,27 @@
+[package]
+name = "up4d"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "up4 node: an unprivileged userspace P4 switch"
+
+[dependencies]
+up4-wire.workspace = true
+up4-config.workspace = true
+up4-engine.workspace = true
+up4-io.workspace = true
+up4-ctl.workspace = true
+up4-metrics.workspace = true
+clap.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+core_affinity.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+up4-tools.workspace = true
+quinn-udp.workspace = true
+
+[features]
+oracle = ["up4-engine/oracle", "up4-io/oracle"]
