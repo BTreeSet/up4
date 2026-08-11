@@ -12,6 +12,7 @@
 
 use serde::Deserialize;
 use std::{collections::BTreeMap, path::PathBuf};
+use up4_engine::admission::Admission;
 use up4_engine::catalog::{Backend, Program, Selection};
 use up4_engine::{
     Engine, FrameCtx, Pipeline, PipelineParams, TypedKey, TypedVal, Verdict,
@@ -180,20 +181,6 @@ fn conform(program: &str) {
     }
 }
 
-/// Cases where the compiled backends and the `native` rendering disagree, with
-/// the reason. Each is a finding, not an exemption: the `.p4` is the artifact
-/// of record, so a divergence means the hand-written rendering and the corpus
-/// generator agree on something the source does not actually say.
-///
-/// `l3fwd/ihl-past-the-end-of-the-frame`: the native rendering rejects a frame
-/// whose IPv4 IHL points past the captured bytes, and `gen_corpus.py` models
-/// that rejection. Neither `l3fwd.softnpu.p4` nor `l3fwd.ubpf.p4` contains such
-/// a check — P4 parsers validate extraction length, not IHL — so the compiled
-/// backends forward it. Resolving it means changing the `.p4` (if the check is
-/// wanted) or the rendering and the corpus (if it is not); until then the
-/// disagreement is named here rather than silently tolerated.
-const KNOWN_DIVERGENCE: &[(&str, &str)] = &[("l3fwd", "ihl-past-the-end-of-the-frame")];
-
 fn check_backend(program: &str, backend: Backend, batch: &Batch, cases: &[Case]) {
     let sel = Selection::P4 {
         program: Program::parse(program).expect("known program"),
@@ -204,13 +191,6 @@ fn check_backend(program: &str, backend: Backend, batch: &Batch, cases: &[Case])
     let mut engine = pipeline.engine();
 
     for case in cases {
-        if backend != Backend::Native
-            && KNOWN_DIVERGENCE
-                .iter()
-                .any(|(p, c)| *p == program && *c == case.name)
-        {
-            continue;
-        }
         let (verdict, frame) = run(&mut *engine, case);
         let (got_verdict, got_port) = describe(verdict);
         assert_eq!(
@@ -261,6 +241,63 @@ fn l2fwd_matches_its_corpus() {
 #[test]
 fn l3fwd_matches_its_corpus() {
     conform("l3fwd");
+}
+
+/// The composition law, checked independently of the corpus: whatever a
+/// program's [`Admission`] refuses, *every* backend of that program refuses.
+///
+/// The corpus already covers three such frames, but only the ones someone
+/// thought to write down. This walks the whole domain the check inspects —
+/// all 256 values of the IPv4 version/IHL byte — against all three backends,
+/// so a backend that quietly stopped applying admission (or a `build` that
+/// forgot to wrap one) fails here rather than waiting for a corpus case to be
+/// added. It is the pointwise statement of `up4(p) = admit(p) ; p4(p)`.
+#[test]
+fn admission_binds_every_backend_of_a_program() {
+    let params = PipelineParams::new([0, 1, 2, 3]);
+    for program in Program::ALL {
+        let admission = program.admission();
+        if admission == Admission::Everything {
+            continue;
+        }
+        let batch: Batch = read(&corpus_dir(program.name()).join("tables.json"));
+        for backend in Backend::ALL {
+            let pipeline = up4_catalog::build(Selection::P4 { program, backend }, &params);
+            load_tables(&*pipeline, &batch.entries);
+            let mut engine = pipeline.engine();
+            for byte in 0..=u8::MAX {
+                let mut frame = ipv4_frame(byte);
+                if admission.admits(&frame) {
+                    continue;
+                }
+                let mut buf = vec![0u8; HEADROOM + frame.len()];
+                buf[HEADROOM..].copy_from_slice(&frame);
+                let mut ctx = FrameCtx::new(&mut buf, HEADROOM, frame.len(), 0, 0).expect("fits");
+                assert_eq!(
+                    engine.process(&mut ctx),
+                    Verdict::Drop,
+                    "{}/{}: admission refused version/ihl byte {byte:#04x}, the backend did not",
+                    program.name(),
+                    backend.name()
+                );
+                frame.clear();
+            }
+        }
+    }
+}
+
+/// A routable frame whose IPv4 version/IHL byte is `byte`. The destination is
+/// one the corpus routes, so anything but a `Drop` is a real disagreement
+/// rather than a table miss.
+fn ipv4_frame(byte: u8) -> Vec<u8> {
+    let mut f = vec![0u8; ETH_HDR_LEN + IPV4_MIN_HDR_LEN + 8];
+    f[0..6].copy_from_slice(&[0x02, 0, 0, 0, 0, 0x02]);
+    f[12..14].copy_from_slice(&ETHERTYPE_IPV4.to_be_bytes());
+    f[ETH_HDR_LEN] = byte;
+    f[ETH_HDR_LEN + 8] = 64; // ttl
+    f[ETH_HDR_LEN + 9] = IP_PROTO_UDP;
+    f[ETH_HDR_LEN + 16..ETH_HDR_LEN + 20].copy_from_slice(&[10, 0, 2, 9]);
+    f
 }
 
 /// Spec S10's CI gate: a program without a corpus fails the build. Stated as a

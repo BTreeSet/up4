@@ -55,6 +55,7 @@ def frame(
     dst_ip: str = "10.0.2.1",
     ttl: int = 64,
     total: int = 128,
+    version: int = 4,
     ihl: int = 5,
     hdr_checksum: int = 0xDEAD,
     l4_checksum: int = 0xBEEF,
@@ -63,7 +64,7 @@ def frame(
     out = bytearray(mac(dst_mac) + mac(src_mac) + ethertype.to_bytes(2, "big"))
     if ethertype == ETHERTYPE_IPV4:
         ip = bytearray(IPV4_MIN_HDR_LEN)
-        ip[0] = 0x40 | ihl
+        ip[0] = (version << 4) | ihl
         ip[2:4] = max(0, total - ETH_HDR_LEN).to_bytes(2, "big")
         ip[8] = ttl
         ip[9] = IP_PROTO_UDP
@@ -83,14 +84,25 @@ def frame(
 
 
 def routed(f: bytes, *, dmac: str, decrement_ttl: bool = True) -> bytes:
-    """What `l3fwd`'s forward action leaves behind."""
+    """What `l3fwd`'s forward action leaves behind.
+
+    The action itself rewrites the destination MAC, decrements the TTL, and
+    zeroes the IPv4 header checksum. Zeroing the transport checksum is the
+    harness's one inner-packet touch (spec S1.5), and it finds the transport
+    header the only way an IPv4 header offers: through IHL. A header length
+    below the legal minimum, or one running past the captured bytes, locates
+    no transport header, so nothing is zeroed -- which is exactly what
+    `Ipv4::payload_offset` returning `None` means on the Rust side.
+    """
     out = bytearray(f)
     out[0:6] = mac(dmac)
     if decrement_ttl:
         out[ETH_HDR_LEN + 8] -= 1
     out[ETH_HDR_LEN + 10 : ETH_HDR_LEN + 12] = b"\x00\x00"  # never recomputed
-    l4 = ETH_HDR_LEN + IPV4_MIN_HDR_LEN
-    out[l4 + 6 : l4 + 8] = b"\x00\x00"
+    hdr_len = (f[ETH_HDR_LEN] & 0x0F) * 4
+    l4 = ETH_HDR_LEN + hdr_len
+    if hdr_len >= IPV4_MIN_HDR_LEN and l4 + 8 <= len(out):
+        out[l4 + 6 : l4 + 8] = b"\x00\x00"
     return bytes(out)
 
 
@@ -155,11 +167,24 @@ def l3fwd():
         case("non-ipv4-is-rejected-by-the-parser", 0, frame(ethertype=ETHERTYPE_ARP, total=60), "drop"),
         case("truncated-ethernet", 0, frame()[: ETH_HDR_LEN - 1], "drop"),
         case("truncated-ipv4", 0, frame()[: ETH_HDR_LEN + IPV4_MIN_HDR_LEN - 1], "drop"),
-        case("ihl-past-the-end-of-the-frame", 0, frame(total=30, ihl=15), "drop"),
         case("min-size-frame", 0, small, "forward", 1, routed(small, dmac=dmac_24)),
         case("max-size-frame", 0, large, "forward", 1, routed(large, dmac=dmac_24)),
         # Ingress port is metadata, not a key: the same frame routes the same way.
         case("ingress-port-does-not-change-the-decision", 3, f24, "forward", 1, routed(f24, dmac=dmac_24)),
+    ]
+    # Ingress admission (`Admission::CoherentIpv4`), not the P4 parser. A P4
+    # parser rejects when `extract` runs out of bytes and for no other reason,
+    # so neither l3fwd binding refuses these on its own -- up4 refuses them
+    # before the program runs, identically on every backend, because a router
+    # declines to route a header that contradicts itself. See
+    # crates/up4-engine/src/admission.rs and docs/deviations.md D10.
+    cases += [
+        case("ihl-past-the-end-of-the-frame", 0,
+             frame(dst_ip="10.0.2.9", total=30, ihl=15), "drop"),
+        case("ihl-below-the-legal-minimum", 0,
+             frame(dst_ip="10.0.2.9", ihl=3), "drop"),
+        case("version-is-not-four", 0,
+             frame(dst_ip="10.0.2.9", version=6), "drop"),
     ]
     return tables, cases
 

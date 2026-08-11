@@ -44,6 +44,25 @@ impl Program {
         }
     }
 
+    /// What this program refuses at ingress, before its parser runs
+    /// (see [`crate::admission`]).
+    ///
+    /// A property of the *program*, not of a backend: every backend running
+    /// `l3fwd` applies `CoherentIpv4`, whether by composing it or by fusing it
+    /// into its own parser. That is what keeps three renderings of one program
+    /// from becoming three programs.
+    #[must_use]
+    pub const fn admission(self) -> crate::admission::Admission {
+        match self {
+            // A bridge forwards on MAC addresses and has no opinion about
+            // what it is carrying.
+            Self::L2Fwd => crate::admission::Admission::Everything,
+            // A router acts on the IPv4 header, so it declines to route one
+            // that contradicts itself.
+            Self::L3Fwd => crate::admission::Admission::CoherentIpv4,
+        }
+    }
+
     /// One line for `--help` and `up4ctl info`.
     #[must_use]
     pub const fn summary(self) -> &'static str {

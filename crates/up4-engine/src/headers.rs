@@ -95,7 +95,18 @@ impl Ipv4 {
     ///
     /// Refuses a truncated header, a version other than 4, and an IHL that
     /// claims more bytes than the frame holds — so `offset + hdr_len` is a
-    /// valid index range for every value this returns.
+    /// valid index range for every value this returns, and
+    /// [`Ipv4::payload_offset`] is total rather than partial.
+    ///
+    /// **The last two refusals are a deliberate deviation** (docs/deviations.md
+    /// D10). A P4 parser rejects when `extract` runs out of bytes and for no
+    /// other reason; neither `l3fwd` binding reads `version` or `ihl`, so both
+    /// compiled backends forward a frame this rejects. up4 keeps the checks
+    /// anyway: a well-formed packet never reaches them, and a malformed one is
+    /// cheaper to refuse at the parser than to carry through a table lookup
+    /// and a rewrite. The corpus pins the deviation to exactly these two cases
+    /// — see `NATIVE_IS_STRICTER` in `crates/up4-catalog/tests/conformance.rs`,
+    /// which asserts the difference rather than excusing it.
     #[must_use]
     pub fn parse(frame: &[u8], offset: usize) -> Option<Self> {
         let b = frame.get(offset..)?.first_chunk::<IPV4_MIN_HDR_LEN>()?;
@@ -118,6 +129,9 @@ impl Ipv4 {
     }
 
     /// Offset of the transport header, given this header's extent.
+    ///
+    /// Total: [`Ipv4::parse`] refused every header whose claimed length runs
+    /// past the frame, so this cannot point outside it.
     #[must_use]
     pub const fn payload_offset(&self) -> usize {
         self.offset + self.hdr_len
@@ -220,6 +234,9 @@ mod tests {
         }
     }
 
+    /// The deviation of docs/deviations.md D10, stated as a test so that
+    /// relaxing it is a deliberate act: up4's parser is stricter than the
+    /// `.p4` it renders, and refuses a header that contradicts itself.
     #[test]
     fn rejects_bad_version_and_lying_ihl() {
         let mut f = frame(IP_PROTO_UDP);
@@ -229,6 +246,14 @@ mod tests {
         assert_eq!(Ipv4::parse(&f, ETH_HDR_LEN), None);
         f[14] = 0x4f; // ihl 15 -> 60 bytes, past the end of this frame
         assert_eq!(Ipv4::parse(&f, ETH_HDR_LEN), None);
+        f[14] = 0x46; // ihl 6 -> 24 bytes of options, and the frame has them
+        assert_eq!(
+            Ipv4::parse(&f, ETH_HDR_LEN)
+                .expect("options fit")
+                .payload_offset(),
+            ETH_HDR_LEN + 24,
+            "a truthful IHL with options is accepted, not just ihl == 5"
+        );
     }
 
     #[test]
