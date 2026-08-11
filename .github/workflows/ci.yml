@@ -86,29 +86,18 @@ jobs:
 
       # The end-to-end tests bind loopback ports and spawn up4d processes, all
       # as an ordinary user — which is the point (spec S1.1).
+      #
+      # This also runs the repository's own invariants, which are tests rather
+      # than workflow steps so that they hold on a developer's machine too:
+      # crates/up4d/tests/unsafe_audit.rs (spec S1.7, A7 — every use of
+      # `unsafe` is on an allowlist, with an exact site count and a warrant
+      # that must be true of the path) and crates/up4d/tests/ci_cache_keys.rs
+      # (a cache key is exactly the profile whose artifacts it holds).
       - name: Test
         run: cargo test --workspace
 
       - name: Conformance corpora are current
         run: python3 tools/corpus/gen_corpus.py --check
-
-      # Spec A7: `unsafe` lives only in up4-io's syscall plumbing. `benches/`
-      # is test scaffolding outside `crates/` and holds the counting allocator;
-      # docs/deviations.md records why.
-      - name: Audit unsafe
-        run: |
-          # Real `unsafe` only: not the `forbid(unsafe_code)` attributes that
-          # prove its absence, and not prose about it in doc comments.
-          hits=$(grep -rnE '\bunsafe\b' crates/ --include='*.rs' \
-            | grep -v '^crates/up4-io/' \
-            | grep -v 'forbid(unsafe_code)' \
-            | grep -vE '^[^:]*:[0-9]+:[[:space:]]*(//|\*)' || true)
-          if [ -n "$hits" ]; then
-            echo "$hits"
-            echo "::error::unsafe found outside up4-io (spec S1.7, A7)"
-            exit 1
-          fi
-          echo "unsafe is confined to up4-io"
 
       # Spec S1.1: no capabilities, no sysctls, no raw sockets, no TUN/TAP, no
       # namespaces — not required and not attempted.
