@@ -222,7 +222,19 @@ fn the_scanner_reads_the_workflow_it_thinks_it_reads() {
     // Guards the parser itself: if the workflow is restructured such that jobs
     // stop being found, the assertions above would pass vacuously.
     let jobs = jobs();
-    for expected in ["ci:check", "ci:smoke", "ci:p4", "p4-artifacts:verify"] {
+    for expected in [
+        "ci:check",
+        "ci:smoke",
+        "ci:p4",
+        // The regeneration workflow is two jobs on purpose: one builds the P4
+        // compilers with no token, the other holds `contents: write` and runs
+        // no repository code but a path validator. Naming both here means a
+        // future collapse back into one job — which would hand a write token
+        // to a step that compiles code fetched off the network — cannot happen
+        // quietly.
+        "p4-artifacts:regenerate",
+        "p4-artifacts:reconcile",
+    ] {
         assert!(jobs.contains_key(expected), "job `{expected}` not parsed");
     }
     assert_eq!(

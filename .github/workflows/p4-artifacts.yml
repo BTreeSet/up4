@@ -1,22 +1,35 @@
 name: p4-artifacts
 
-# The heavy half of the artifact check: regenerate from the `.p4` sources with
-# the real compilers and compare bytes. That catches a hand-edited artifact,
-# which the hash-based `audit` in ci.yml cannot.
+# The heavy half of the artifact check, plus the repair.
 #
-# Its own workflow because it builds p4c from source: 691 targets, tens of
-# minutes on a cold cache. That does not belong on a pull-request path: it
-# would not finish, and `cancel-in-progress` would kill it on the next push.
-# Here it runs weekly and on demand, with a warm cache and no cancellation.
+# `cargo xtask audit` in ci.yml is the cheap detector: it hashes each `.p4`
+# against p4/generated.lock and runs on every pull request. This workflow does
+# what that one cannot -- build the real compilers, regenerate, and fix the
+# tree -- and it takes tens of minutes to do it, so it never runs on a
+# pull-request path where `cancel-in-progress` would kill it.
+#
+# Two jobs, because they need very different trust:
+#
+#   regenerate   builds two P4 compilers from source and runs them. Holds no
+#                write token. Its output leaves as an artifact.
+#   reconcile    holds `contents: write` and runs no repository code beyond a
+#                path validator. Parses the artifact, commits via the GitHub
+#                API so the commit is bot-authored and GPG-signed.
+#
+# Splitting them is the point: a compromised compiler tarball reaches a runner
+# with no credentials, and the job that can write has nothing to compromise.
 on:
   schedule:
     # Sunday 04:00 UTC. Nothing depends on the hour; it just needs to be quiet.
     - cron: "0 4 * * 0"
   workflow_dispatch:
   push:
+    # `main` only. Without this the job ran on every branch: a 120-minute build
+    # started by any push touching p4/**, none of them cancelling each other,
+    # and none of them able to reconcile anything, because only main is
+    # committed to.
+    branches: [main]
     paths:
-      # A change to a source, an artifact, or the toolchain model itself is
-      # worth the full check even outside the schedule.
       - "p4/**"
       - "crates/up4-x4c/src/generated/**"
       - "crates/up4-ubpf/src/generated/**"
@@ -24,35 +37,129 @@ on:
 
 permissions: {}
 
+# One reconciliation at a time. Not `cancel-in-progress`: a half-built p4c
+# teaches nothing and throws away a warm cache, and two runs racing to commit
+# would both lose the compare-and-swap below.
+concurrency:
+  group: p4-artifacts
+  cancel-in-progress: false
+
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
 
 jobs:
-  verify:
-    name: artifacts are byte-identical to a fresh build
+  regenerate:
+    name: regenerate from the .p4 sources
     runs-on: ubuntu-latest
     # p4c is the long pole. Generous on purpose: a cold cache builds two
     # compilers, and a timeout that truncates the build teaches nothing.
     timeout-minutes: 120
     permissions:
       contents: read
+    outputs:
+      # Small strings across the job boundary; the files go by artifact.
+      changed: ${{ steps.reconcile.outputs.changed }}
+      base: ${{ steps.base.outputs.oid }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
           submodules: false
 
+      # The commit this regeneration is based on. Passed to the reconcile job
+      # as `expectedHeadOid`, which makes the eventual push a compare-and-swap:
+      # if main moved during the build, the commit is refused rather than
+      # silently rebasing generated output onto sources it was not built from.
+      - name: Record the base commit
+        id: base
+        run: echo "oid=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
       # Keyed on the toolchain model, so pinning a new compiler revision
       # invalidates the cache and nothing else does.
       - name: Cache the P4 toolchain
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .toolchain
           key: p4-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('xtask/src/tool.rs') }}
 
-      # Reports; never rewrites. The token here is read-only by design, so a
-      # job that committed a regeneration would be a hole in the trust boundary
-      # rather than a convenience. The fix is `cargo xtask generate`, by a human.
-      - name: Committed artifacts match a fresh build
-        run: cargo xtask verify
+      # `reconcile`, not `generate`: it writes only what is genuinely stale.
+      # x4c emits items in a nondeterministic order, so regenerating its output
+      # always produces different bytes; `generate` here would mark the tree
+      # dirty on every run and this workflow would commit on every run, forever.
+      # `reconcile` judges each target by its own fidelity -- bytes where the
+      # compiler is reproducible, the recorded source hash where it is not.
+      - name: Reconcile
+        id: reconcile
+        run: |
+          cargo xtask reconcile
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git status --porcelain
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "every artifact is current"
+          fi
+
+      # Only the files git says changed, plus a manifest naming them. The
+      # manifest is the interface to the privileged job: it commits what is on
+      # the manifest and refuses everything else, so the package cannot smuggle
+      # a working-tree file that was never regenerated.
+      - name: Package what changed
+        if: steps.reconcile.outputs.changed == 'true'
+        run: python3 scripts/ci/package-reconciled.py /tmp/reconciled
+
+      - name: Upload
+        if: steps.reconcile.outputs.changed == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: reconciled
+          path: /tmp/reconciled
+          retention-days: 1
+          if-no-files-found: error
+
+  reconcile:
+    name: commit the reconciliation
+    needs: regenerate
+    # Never on a pull request (there is no such trigger) and never when the
+    # tree is already current.
+    if: >-
+      needs.regenerate.outputs.changed == 'true' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The only `contents: write` in this repository. Everything this job does
+    # is below, and it is three steps long on purpose.
+    permissions:
+      contents: write
+    steps:
+      # Just the validator, at the base commit. This job must not check out or
+      # run anything else: it holds the token that the regeneration job was
+      # deliberately denied.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.regenerate.outputs.base }}
+          sparse-checkout: scripts/ci
+          sparse-checkout-cone-mode: false
+          # The token reaches `gh` through the environment below, never through
+          # .git/config.
+          persist-credentials: false
+          submodules: false
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: reconciled
+          # Beside the checkout, never over it: the package is untrusted input
+          # and must not be able to replace the validator about to inspect it.
+          path: /tmp/reconciled
+
+      # Parses the change set against a closed path allowlist, then commits
+      # through `createCommitOnBranch`, which takes no author or committer
+      # field: the identity is the token's, so the commit is github-actions[bot]
+      # and GitHub signs it. `expectedHeadOid` makes it a compare-and-swap.
+      - name: Commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 scripts/ci/commit-generated.py /tmp/reconciled \
+            "$GITHUB_REPOSITORY" main "${{ needs.regenerate.outputs.base }}"

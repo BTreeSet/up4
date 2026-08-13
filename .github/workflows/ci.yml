@@ -30,7 +30,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           # Nothing here pushes, and CI compiles and runs pull-request code,
           # including whatever build scripts it brings. Leaving the token in
@@ -70,7 +70,7 @@ jobs:
       # New profiles are the supported way to grow: declare `[profile.<name>]`
       # in the workspace manifest and `<name>` becomes a legal key with no
       # change to the test.
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           shared-key: dev
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
@@ -101,11 +101,27 @@ jobs:
 
       # Spec S1.1: no capabilities, no sysctls, no raw sockets, no TUN/TAP, no
       # namespaces, not required and not attempted.
+      #
+      # Now covers `scripts/` and shell, which the previous version did not: it
+      # searched only `*.rs` and `*.py` under crates/tools/benches, so a shell
+      # script calling `unshare` or `ip netns` was invisible to it. That gap
+      # matters more now than it did, because the multi-host work (ADR-007)
+      # deliberately puts a container topology next to a binary whose whole
+      # claim is that it needs no privilege.
+      #
+      # The rule is a boundary, not a ban: the *harness* may build namespaces,
+      # up4's own code may not. `scripts/multihost.sh` is the single warranted
+      # exception and is named here rather than being excluded by a directory
+      # nobody thought to search.
       - name: Audit privileged interfaces
         run: |
-          if grep -rnE 'CAP_NET|setcap|sysctl -w|SOCK_RAW|/dev/net/tun|unshare\(|setns\(' \
-              crates/ tools/ benches/ --include='*.rs' --include='*.py'; then
-            echo "::error::privileged interface referenced (spec S1.1)"
+          hits=$(grep -rnE 'CAP_NET|setcap|sysctl -w|SOCK_RAW|/dev/net/tun|unshare|setns|ip netns|--privileged|--cap-add' \
+              crates/ tools/ benches/ scripts/ xtask/ \
+              --include='*.rs' --include='*.py' --include='*.sh' \
+              | grep -v '^scripts/multihost.sh:' || true)
+          if [ -n "$hits" ]; then
+            echo "$hits"
+            echo "::error::privileged interface referenced outside the warranted harness (spec S1.1, ADR-007)"
             exit 1
           fi
           echo "no privileged interfaces referenced"
@@ -122,7 +138,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
           submodules: false
@@ -149,7 +165,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
           submodules: false
@@ -157,7 +173,7 @@ jobs:
       # `release`, for the same reason the other job's key is `dev`: the key
       # names the profile in the entry. `cargo bench` would belong here too;
       # the `bench` profile inherits `release`.
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           shared-key: release
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}

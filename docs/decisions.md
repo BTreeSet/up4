@@ -257,6 +257,67 @@ send no control traffic whatsoever.
 
 ---
 
+## ADR-010 — Only one job may write to the repository, and it compiles nothing
+
+**Context.** The artifact check was a detector with no repair: `cargo xtask
+audit` failed a pull request and a human ran `cargo xtask generate`. Automating
+the repair means something in CI needs `contents: write` — the largest grant
+GitHub offers on a repository, and the same workflow was building two P4
+compilers from source off the network.
+
+**Decision.** Split the work by trust, not by convenience.
+
+| Job | Builds compilers | Token |
+|---|---|---|
+| `regenerate` | yes | `contents: read` |
+| `reconcile` | no — runs a path validator and one API call | `contents: write` |
+
+The regeneration hands its result over as an artifact with a manifest. The
+privileged job checks out *only* `scripts/ci` (sparse), downloads the package
+beside that checkout rather than over it, and parses every path in the manifest
+against a closed allowlist before committing.
+
+**Consequences.** A compromised compiler tarball reaches a runner with no
+credentials, and the job that could write has nothing worth compromising. The
+allowlist bounds a bad artifact to the directories already understood to be
+machine-written; it does not, and cannot, police the *bytes* inside a generated
+file, because committing compiler output is the entire point. What it stops is
+a generated path escaping into `.github/` or `crates/**/src/`.
+
+**Enforced by** `the_scanner_reads_the_workflow_it_thinks_it_reads`, which
+names both jobs: collapsing them back into one — handing a write token to a
+step that compiles code fetched off the network — fails the build.
+
+---
+
+## ADR-011 — The reconciler commits staleness, not regeneration
+
+**Context.** The obvious automation is "regenerate, and commit whatever
+changed". It would have committed on every single run, forever.
+
+x4c emits items in a nondeterministic order, so regenerating an unchanged
+source produces different bytes every time. `Fidelity` already recorded this —
+`X4cRust` is `SourceWitness`, `UbpfObject` is `ByteIdentical` — and `verify`
+already honoured it by only byte-comparing the reproducible target. A
+reconciler using `cargo xtask generate` would have thrown that away.
+
+**Decision.** A new mode, `cargo xtask reconcile`, writes an artifact only when
+that artifact's *own* fidelity criterion says it is stale: bytes where the
+compiler is reproducible, the recorded source hash where it is not.
+
+**Consequences.** "Regenerated" and "changed" stop being confused, which is
+what makes an automatic commit safe. The witness file is handled separately and
+always follows the source: a comment-only edit to a `.p4` can leave a
+reproducible compiler's output byte-identical while changing the source hash,
+and if the witness only moved alongside an artifact, `cargo xtask audit` would
+then fail on every later pull request for a tree that is in fact current.
+
+**Enforced by** the shape of the sum: `Realized::Reconcile` is a variant, so
+the loop over artifacts must handle it, and `stale()` is total over `Fidelity`.
+A new target gets a fidelity or it does not compile.
+
+---
+
 ## Sources
 
 Checked 2026-08-12. Both are primary sources; neither is quoted beyond fair

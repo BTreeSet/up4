@@ -66,6 +66,16 @@ enum Realized {
     Check,
     /// Copy what the compilers produced over what is committed.
     Generate,
+    /// Copy over only what is *stale*, judged by each target's own fidelity.
+    ///
+    /// The difference from [`Realized::Generate`] is the whole reason an
+    /// automated reconciler can be trusted to commit. `Generate` rewrites every
+    /// artifact unconditionally, which for a [`Fidelity::SourceWitness`] target
+    /// means writing bytes that differ from the committed ones on *every* run —
+    /// x4c reorders its output, so "regenerated" and "changed" are different
+    /// questions. A reconciler that confused the two would push a commit every
+    /// time it ran, forever.
+    Reconcile,
     /// Regenerate and compare bytes. Needs the toolchain.
     Verify,
 }
@@ -78,6 +88,7 @@ impl Mode {
             "audit" => Some(Self::Audit),
             "check" => Some(Self::Realized(Realized::Check)),
             "generate" => Some(Self::Realized(Realized::Generate)),
+            "reconcile" => Some(Self::Realized(Realized::Reconcile)),
             "verify" => Some(Self::Realized(Realized::Verify)),
             _ => None,
         }
@@ -341,6 +352,37 @@ enum Fidelity {
     SourceWitness,
 }
 
+/// Whether `target`'s committed artifacts are out of date, judged by the only
+/// criterion its compiler supports.
+///
+/// Total, and deliberately asymmetric:
+///
+/// * [`Fidelity::ByteIdentical`] — the compiler is reproducible, so the bytes
+///   answer directly. A hand-edited artifact is caught here.
+/// * [`Fidelity::SourceWitness`] — the compiler is *not* reproducible, so the
+///   recorded source hash is the only honest signal. If the source is the one
+///   the artifact was made from, the artifact is current whatever its bytes
+///   look like. Comparing bytes here would report staleness forever.
+///
+/// `recorded` is the content of the witness file, read once by the caller
+/// rather than per target: this is called inside the loop over targets, and
+/// re-reading a file per iteration is the kind of hidden cost the loop's shape
+/// makes easy to miss.
+fn stale(target: Target, root: &Path, pairs: &[(PathBuf, PathBuf)], recorded: &str) -> bool {
+    match target.fidelity() {
+        Fidelity::ByteIdentical => pairs.iter().any(|(produced, committed)| {
+            std::fs::read(produced).unwrap_or_default()
+                != std::fs::read(committed).unwrap_or_default()
+        }),
+        Fidelity::SourceWitness => match witness_line(target, root) {
+            // No witness line for this source: it has never been generated, or
+            // the source moved. Either way the artifact cannot be vouched for.
+            Ok(w) => !recorded.lines().any(|l| l.trim() == w),
+            Err(_) => true,
+        },
+    }
+}
+
 /// A non-cryptographic hash: this distinguishes "the source changed" from
 /// "it did not", which is an accident-detection problem, not an adversarial
 /// one. Named FNV-1a rather than left as a magic loop so the choice is legible.
@@ -353,6 +395,17 @@ fn fnv1a(bytes: &[u8]) -> u64 {
 /// The witness file: which source, at which content hash, produced which
 /// artifacts, using which pinned tool.
 const WITNESS: &str = "p4/generated.lock";
+
+/// The witness file's whole content. One definition, so `generate` and
+/// `reconcile` cannot produce files that differ only in their header.
+fn witness_body(witnesses: &[String]) -> String {
+    format!(
+        "# Written by `cargo xtask generate`. Each line records the .p4\n\
+         # source an artifact was produced from, and a hash of that\n\
+         # source at the time. `cargo xtask verify` recomputes it.\n{}\n",
+        witnesses.join("\n")
+    )
+}
 
 fn witness_line(target: Target, root: &Path) -> Result<String, String> {
     let src = root.join(target.source());
@@ -377,12 +430,13 @@ fn main() -> std::process::ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let Some(mode) = args.first().and_then(|s| Mode::parse(s)) else {
         eprintln!(
-            "usage: cargo xtask <check|generate|verify> [program]\n\
+            "usage: cargo xtask <audit|check|generate|reconcile|verify> [program]\n\
              \n\
                audit     no compilers: are the .p4 sources the ones the\n\
                          committed artifacts were generated from?\n\
                check     compile every source, keep nothing\n\
                generate  regenerate committed artifacts from the .p4 sources\n\
+               reconcile regenerate, but write only what is actually stale\n\
                verify    fail if any committed artifact differs from its source\n"
         );
         return std::process::ExitCode::from(2);
@@ -421,6 +475,8 @@ fn main() -> std::process::ExitCode {
     let _ = std::fs::remove_dir_all(&stage_root);
     let mut report = Report::default();
     let mut witnesses: Vec<String> = Vec::new();
+    // Read once, not per target: `stale` is called inside the loop below.
+    let recorded = std::fs::read_to_string(root.join(WITNESS)).unwrap_or_default();
 
     for target in targets {
         let stage = stage_root.join(target.label().replace('/', "-"));
@@ -432,6 +488,10 @@ fn main() -> std::process::ExitCode {
             }
         };
         report.checked += 1;
+        // Computed per target, before the loop over its artifacts: staleness is
+        // a property of the target, and for a `SourceWitness` target it is not
+        // a property of any individual file.
+        let target_is_stale = stale(target, &root, &pairs, &recorded);
 
         let line = match witness_line(target, &root) {
             Ok(l) => l,
@@ -457,6 +517,16 @@ fn main() -> std::process::ExitCode {
                     }
                     report.written.push(rel);
                 }
+                // Same copy, gated on staleness computed once per target
+                // before this loop over its artifacts.
+                Realized::Reconcile if target_is_stale => {
+                    if let Err(e) = copy(&produced, &committed) {
+                        eprintln!("{e}");
+                        return std::process::ExitCode::FAILURE;
+                    }
+                    report.written.push(rel);
+                }
+                Realized::Reconcile => {}
                 // Only where the compiler is reproducible; elsewhere the
                 // source witness below is the check.
                 Realized::Verify if target.fidelity() == Fidelity::ByteIdentical => {
@@ -479,12 +549,7 @@ fn main() -> std::process::ExitCode {
     match mode {
         Realized::Check => println!("\n{} source(s) compile", report.checked),
         Realized::Generate => {
-            let body = format!(
-                "# Written by `cargo xtask generate`. Each line records the .p4\n\
-                 # source an artifact was produced from, and a hash of that\n\
-                 # source at the time. `cargo xtask verify` recomputes it.\n{}\n",
-                witnesses.join("\n")
-            );
+            let body = witness_body(&witnesses);
             if let Err(e) = std::fs::write(root.join(WITNESS), body) {
                 eprintln!("{WITNESS}: {e}");
                 return std::process::ExitCode::FAILURE;
@@ -493,6 +558,29 @@ fn main() -> std::process::ExitCode {
                 println!("wrote {w}");
             }
             println!("wrote {WITNESS}");
+        }
+        Realized::Reconcile => {
+            // The witness must track the *source*, not the artifacts. A
+            // comment-only edit to a `.p4` can leave a reproducible compiler's
+            // output byte-identical while changing the source hash; if the
+            // witness were only rewritten alongside an artifact, `cargo xtask
+            // audit` would fail on every later pull request for a tree that is
+            // in fact current.
+            let body = witness_body(&witnesses);
+            if body != recorded {
+                if let Err(e) = std::fs::write(root.join(WITNESS), &body) {
+                    eprintln!("{WITNESS}: {e}");
+                    return std::process::ExitCode::FAILURE;
+                }
+                report.written.push(WITNESS.to_owned());
+            }
+            if report.written.is_empty() {
+                println!("\nnothing to reconcile: every artifact is current");
+            } else {
+                for w in &report.written {
+                    println!("reconciled {w}");
+                }
+            }
         }
         Realized::Verify => {
             // The witness catches the failure that actually happens: a `.p4`

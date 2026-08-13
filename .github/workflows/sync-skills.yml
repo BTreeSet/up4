@@ -11,7 +11,8 @@
 # each branch records for the submodule, so a fork of SKILLs with the same layout
 # works unchanged.
 #
-# All logic lives in the reusable workflow inside the SKILLs repository -
+# All logic lives in the reusable workflow inside the SKILLs repository, pinned
+# to a commit below -
 # this caller contributes only the schedule and the `contents: write` grant,
 # which the reusable workflow narrows to `contents: read` for everything but
 # the one job that writes. (Forked SKILLs? Point the `uses:` line at your
@@ -40,7 +41,12 @@ jobs:
   sync:
     permissions:
       contents: write
-    uses: BTreeMap/SKILLs/.github/workflows/sync-skills.yml@main
+    # Pinned to a commit, not `@main`. This is the one `uses:` in the
+    # repository that receives `contents: write`, and a mutable ref means the
+    # code holding that grant can change without a commit here -- the exact
+    # supply-chain shape the rest of this workflow set is careful about.
+    # Bumping it is a reviewed edit; renovate/dependabot can propose it.
+    uses: BTreeMap/SKILLs/.github/workflows/sync-skills.yml@d9011dbcfec68cf3595b143656412f348a0604be # main
     # Defaults shown; uncomment and adjust as needed:
     # with:
     #   submodule-path: .github/skills
