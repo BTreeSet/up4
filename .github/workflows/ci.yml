@@ -30,7 +30,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@v5
         with:
           # Nothing here pushes, and CI compiles and runs pull-request code,
           # including whatever build scripts it brings. Leaving the token in
@@ -70,7 +70,7 @@ jobs:
       # New profiles are the supported way to grow: declare `[profile.<name>]`
       # in the workspace manifest and `<name>` becomes a legal key with no
       # change to the test.
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: Swatinem/rust-cache@v2
         with:
           shared-key: dev
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
@@ -138,7 +138,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@v5
         with:
           persist-credentials: false
           submodules: false
@@ -165,7 +165,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@v5
         with:
           persist-credentials: false
           submodules: false
@@ -173,7 +173,7 @@ jobs:
       # `release`, for the same reason the other job's key is `dev`: the key
       # names the profile in the entry. `cargo bench` would belong here too;
       # the `bench` profile inherits `release`.
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: Swatinem/rust-cache@v2
         with:
           shared-key: release
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
