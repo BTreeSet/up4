@@ -26,9 +26,13 @@ output attached (S15 M6).
       `rx_seq_gap_total` + harness drop counters.
 - [ ] A6: `kill -TERM` → final snapshot + exit 0; `kill -KILL` one node →
       peer keeps counting rx silence, no crash, no spin.
-- [ ] A7: `cargo test` green, `clippy -D warnings` clean, `unsafe` only in
-      up4-io syscall plumbing; grep-audit as the final gate:
-      `rg -n 'unsafe' crates/ --glob '!crates/up4-io/**'` must be empty.
+- [ ] A7: `cargo test` green, `clippy -D warnings` clean, and the `unsafe`
+      audit passing. **The grep this line used to specify is gone**: generated
+      code carries `unsafe impl Send` and the uBPF VM boundary reads memory the
+      VM owns, so "empty outside up4-io" became false for good reasons. The
+      gate is now `cargo test -p up4d --test unsafe_audit`, which checks every
+      site against a warranted allowlist with exact counts
+      (see [decisions.md](../decisions.md) ADR-005).
 - [ ] S17: attach probe output for both nodes; every contradicted assumption
       logged as WARN with its fallback, or a documented deviation.
 
@@ -36,6 +40,6 @@ output attached (S15 M6).
 
 ```sh
 cargo bench --workspace          # update benches/RESULTS.md
-rg -n 'unsafe' crates/ --glob '!crates/up4-io/**'   # empty
+cargo test -p up4d --test unsafe_audit              # every unsafe site warranted
 # then the cluster runbook above, results appended to RESULTS.md
 ```

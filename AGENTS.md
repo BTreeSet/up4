@@ -14,6 +14,7 @@ invent protocol or semantics. Where the implementation already departs from it,
 | Task | Read |
 |---|---|
 | Anything | this file, then [docs/deviations.md](docs/deviations.md) |
+| Any architectural change | [docs/decisions.md](docs/decisions.md) first — the reasoning is probably already recorded |
 | Any implementation | [docs/spec.md](docs/spec.md) section for your crate + the one milestone plan in [docs/README.md](docs/README.md) |
 | Wire format, config, probe | spec S4-S5, S11.1 + [docs/plan/m1](docs/plan/m1-wire-config-probe.md) |
 | Sockets, rx/tx, pktgen | spec S6, S7.4, S11.2 + [docs/plan/m2](docs/plan/m2-io-pktgen.md) |
@@ -21,6 +22,8 @@ invent protocol or semantics. Where the implementation already departs from it,
 | x4c, adapter, tables, l2fwd | spec S7, S10 + [docs/plan/m4](docs/plan/m4-engine-l2fwd.md) |
 | l3fwd, punt | spec S7.2, S8.3, S14 + [docs/plan/m5](docs/plan/m5-l3fwd-punt.md) |
 | Cluster runs, benches | spec S13-S14 + [docs/plan/m6](docs/plan/m6-cluster-benches.md) |
+| Multi-host CI, containers | spec S1.1, S13.3 + [docs/plan/m7](docs/plan/m7-multihost.md) |
+| Fabric transport (MRC/UE) | spec S4, S6, S16 + [docs/plan/m8](docs/plan/m8-fabric-transport.md) |
 
 Milestones are sequential and each ends runnable. Do not start M(n+1) while
 M(n)'s done-when is unmet.
@@ -28,15 +31,22 @@ M(n)'s done-when is unmet.
 ## Hard rules (spec S1; violations are defects, not style issues)
 
 - Unprivileged only. No capabilities, sysctls, ethtool, hugepages, raw
-  sockets, TUN/TAP, namespaces, required *or* attempted silently.
+  sockets, TUN/TAP, namespaces, required *or* attempted silently. This binds
+  up4's binaries, not the test harness around them: a rig may build a container
+  topology, but every up4 process in it runs as a non-root user and asserts so
+  (ADR-007).
 - No async runtime anywhere in the datapath. std threads, blocking sockets.
 - No forwarding decisions outside the loaded P4 engine (NullEngine oracle
   excepted, benchmarks only).
 - Static topology, read once. No discovery, keepalives, negotiation.
 - Inner checksums: zero-filled on rewrite, never verified. Nothing else.
 - Fail loudly: every discard bumps a named counter; one-time events log WARN.
-- `unsafe` only in `up4-io` syscall plumbing (and BPF FFI if activated), each
-  block carrying its invariant comment. A7 greps for this.
+- `unsafe` only where the audit allowlist warrants it, each block carrying its
+  invariant comment. `cargo test -p up4d --test unsafe_audit` is the gate: a
+  closed `Warrant` enum, a structural rule per warrant, and exact site counts.
+  The old "grep must be empty outside up4-io" is gone (ADR-005).
+- No forwarding *or transport* logic in a `.p4`. The fabric transport is
+  `up4-wire`/`up4-io` and is never compiled by x4c or p4c (ADR-008).
 
 ## Commands
 
@@ -47,7 +57,9 @@ cargo clippy --workspace --all-targets -- -D warnings   # must be clean
 cargo fmt --check
 ./scripts/demo.sh               # two routers + two generators, no root
 cargo bench -p benches          # fast-path changes only; update benches/RESULTS.md
+cargo xtask audit               # .p4 sources match their committed artifacts
 python3 tools/corpus/gen_corpus.py --check              # corpora are current
+cargo test -p up4d --test unsafe_audit                  # every unsafe site warranted
 ```
 
 Definition of done per change: tests green, clippy clean, and, for any

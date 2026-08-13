@@ -25,6 +25,14 @@ default kernel settings.
    capabilities, sysctl changes, ethtool, hugepages, raw sockets, TUN/TAP, or
    network namespaces. Never attempt them silently either: optional features
    are probed, and probe results are logged.
+
+   This constrains the **system under test**, not the harness that builds a
+   topology around it. A test rig may create containers or namespaces to
+   simulate two machines; what it may not do is run up4's binaries with any
+   privilege they would not have in the field. The distinction is mechanical,
+   not editorial: the harness lives outside `crates/`, and any multi-host run
+   asserts `euid != 0` for every up4 process before it starts. See
+   [decisions.md](decisions.md) ADR-007 and [plan/m7](plan/m7-multihost.md).
 2. **No async runtime.** std threads and blocking sockets only. No tokio,
    async-std, smol, or mio in the datapath.
 3. **No forwarding logic in harness code.** The only component that may decide
@@ -416,8 +424,11 @@ A5 pktgen-induced overload (2× A2 rate) produces accurate loss attribution:
    frames.
 A6 Kill -TERM produces a final counter snapshot and exit 0; kill -KILL of one
    node leaves the peer running and counting `rx` silence (no crash, no spin).
-A7 `cargo test` green; clippy clean (`-D warnings`); no `unsafe` outside
-   `up4-io` syscall plumbing.
+A7 `cargo test` green; clippy clean (`-D warnings`); every `unsafe` site
+   accounted for by the audit allowlist, each under a warrant whose structural
+   rule its path satisfies (`crates/up4d/tests/unsafe_audit.rs`). This replaces
+   the original "no `unsafe` outside `up4-io`" grep, which generated code and
+   the VM boundary both outgrew; see [decisions.md](decisions.md) ADR-005.
 
 ## S15. Milestones (implement in this order; each ends runnable)
 
@@ -433,6 +444,15 @@ M5 Program `l3fwd` (LPM + TTL decrement + checksum zero-fill) + punt port.
    Done when: A2, A3, A4 pass on loopback.
 M6 Cluster validation + benches + RESULTS.md. Done when: A1-A7 on the real
    cluster, or deviations documented with probe output attached.
+M7 Multi-host validation: all three backends forwarding between two containers
+   in separate network namespaces, over a 1500-MTU veth path, `up4d`
+   unprivileged, in CI. Done when: V1-V7 of [plan/m7](plan/m7-multihost.md)
+   pass on every push. This is the definition of done for the three-backend
+   work; it does not replace M6's throughput acceptance.
+M8 Fabric transport: `DeliveryMode` as a closed sum, per-packet entropy
+   spraying, selective acknowledgement, ECN/RTT sender congestion control.
+   Opt-in; unreliable unordered stays the default. Done when: T1-T9 of
+   [plan/m8](plan/m8-fabric-transport.md) pass. Do not start before M7.
 
 ## S16. Explicitly out of scope for v1 (do not implement)
 
@@ -440,6 +460,12 @@ Traffic manager/queueing/AQM; meters/counters-as-externs; clone/mirror;
 recirculation; io_uring; packet-out; P4Runtime/gRPC; encryption/auth;
 IPv6 inner-parsing beyond what programs do themselves; hot-swapping pipelines
 at runtime (pipelines are compiled in; restart to change); Windows/macOS.
+
+Also out of scope for v1, but *planned* rather than refused: fabric-layer
+reliability, retransmission, and congestion control ([plan/m8](plan/m8-fabric-transport.md)).
+v1's fabric is unreliable and unordered by design, and stays the default
+afterwards — loss that the fabric repairs is loss an experiment can no longer
+attribute (A5). Do not implement any of it while completing v1.
 
 ## S17. Known environmental assumptions (verify with probe, do not hardcode)
 
